@@ -217,6 +217,13 @@ The library then:
 
 ![Surrounding-plane measurement](screenshots/point-surface-plane.png)
 
+#### Constructed result
+
+After measuring the surrounding plane, the final actual point is constructed
+from the measured surface and the theoretical result line.
+
+![Surrounding-plane result](screenshots/point-surface-plane-result.png)
+
 ### Tolerance and output strategies
 
 The tolerance-output example processes two point features using the same tolerance configuration.
