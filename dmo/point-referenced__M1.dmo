@@ -1,0 +1,34 @@
+FILNAM/'point-referenced.dmo',05.2
+$$ ************************************************************************
+$$ WM | Quartis(R) R2026-2 (4.34.0.43851-b7c8b7c04c99) : DMIS Results Export
+$$ Copyright (c) 2026, WENZEL Metromec AG, Switzerland
+$$ Part Program        : point-referenced
+$$ Workpiece           : 1
+$$ Description           : REFERENZKOERPER FUER VERGLEICHSMESS
+$$ Drawing No.           : 11-38D610762
+$$ Comment           : 
+$$ Measurement         : 1
+$$ Description           : 
+$$ Executed by         : werner
+$$ ************************************************************************
+ 
+OUTPUT/R(R_DATE_HEADER)
+DATE = 2026/11/22
+ 
+OUTPUT/R(R_TIME_HEADER)
+TIME = 15:09:46
+ 
+OUTPUT/F(TARGET_POINT),T(TARGET_POINTY),T(TARGET_POINTP),T(TARGET_POINTP2)
+F(TARGET_POINT)=FEAT/POINT,CART,472.000000,273.000000,82.800000,0.000000, $
+    1.000000,0.000000
+T(TARGET_POINTY)=TOL/CORTOL,YAXIS,-0.500000,1.000000
+T(TARGET_POINTP)=TOL/PROFP,-0.500000,1.000000
+T(TARGET_POINTP2)=TOL/POS,3D,0.500000,RFS
+ 
+OUTPUT/FA(TARGET_POINT),TA(TARGET_POINTY),TA(TARGET_POINTP),TA(TARGET_POINTP2)
+FA(TARGET_POINT)=FEAT/POINT,CART,472.000000,273.000000,82.800000,0.000000, $
+    1.000000,0.000000
+TA(TARGET_POINTY)=TOL/CORTOL,YAXIS,0.000000,INTOL
+TA(TARGET_POINTP)=TOL/PROFP,0.000000,INTOL
+TA(TARGET_POINTP2)=TOL/POS,3D,0.000000,INTOL,RFS
+ENDFIL

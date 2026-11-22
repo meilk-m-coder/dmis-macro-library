@@ -1,0 +1,202 @@
+DMISMN/'point-surface-plane.dmi'
+
+$$ ============================================================================
+$$ EXAMPLE: Surrounding-plane point measurement
+$$
+$$ This example demonstrates the surrounding-plane strategy of the
+$$ DMIS Macro Library:
+$$
+$$   nominal point
+$$       -> generate surrounding probing pattern
+$$       -> measure actual surrounding plane
+$$       -> determine actual surface
+$$       -> construct final actual point
+$$       -> prepare tolerances
+$$       -> write output
+$$
+$$ The surrounding-plane strategy is selected by setting:
+$$
+$$   surface_point_count >= 3
+$$
+$$ Probe selection, safe machine travel, clearance positions and
+$$ machine-specific configuration must be validated for the target system.
+$$
+$$ WARNING:
+$$ Do not run this example on physical measurement equipment without
+$$ validating all positions, probe configurations and movements first.
+$$ ============================================================================
+
+DISPLY/TERM,DMIS,STOR,DMIS
+FILNAM/'point-surface-plane.dmo',05.2
+
+UNITS/MM,ANGDEC
+MODE/PROG,MAN
+
+$$ ----------------------------------------------------------------------------
+$$ Base coordinate system
+$$ ----------------------------------------------------------------------------
+
+D(WCS0)=TRANS/XORIG,0.0000,YORIG,0.0000,ZORIG,0.0000
+SAVE/D(WCS0)
+
+$$ ----------------------------------------------------------------------------
+$$ Report header
+$$ ----------------------------------------------------------------------------
+
+R(R_DATE_HEADER)=REPORT/DATE
+OUTPUT/R(R_DATE_HEADER)
+
+R(R_TIME_HEADER)=REPORT/TIME
+OUTPUT/R(R_TIME_HEADER)
+
+$$ ----------------------------------------------------------------------------
+$$ Probe configuration
+$$
+$$ Replace the sensor selection with a sensor configuration that is valid
+$$ for the target measurement system.
+$$ ----------------------------------------------------------------------------
+
+SNSET/APPRCH,6
+SNSET/RETRCT,6
+SNSLCT/SA(2012)
+
+$$ ----------------------------------------------------------------------------
+$$ Example parameters
+$$ ----------------------------------------------------------------------------
+
+DECL/LOCAL,INTGR,vector_convention,inverse_direction
+DECL/LOCAL,INTGR,surface_point_count,snap_to_axis
+
+DECL/LOCAL,REAL,thickness,moffset
+DECL/LOCAL,REAL,surface_point_distance
+
+DECL/LOCAL,CHAR,64,elmname
+
+$$ ----------------------------------------------------------------------------
+$$ Measurement strategy
+$$
+$$ vector_convention = 0 -> nominal vector points away from the material
+$$ inverse_direction = 0 -> default measurement side
+$$ thickness         = 0 -> no material-thickness correction
+$$ moffset           = 0 -> no additional measurement offset
+$$ snap_to_axis      = 0 -> result line follows the nominal point vector
+$$
+$$ surface_point_count    = 5
+$$   -> measure five surrounding points instead of a single point
+$$
+$$ surface_point_distance = 2.5 mm
+$$   -> radial distance of the surrounding probing points from the
+$$      technical measurement position
+$$ ----------------------------------------------------------------------------
+
+vector_convention = ASSIGN/0
+inverse_direction = ASSIGN/0
+
+thickness = ASSIGN/0.0
+moffset = ASSIGN/0.0
+
+snap_to_axis = ASSIGN/0
+
+surface_point_count = ASSIGN/5
+surface_point_distance = ASSIGN/2.5
+
+$$ ----------------------------------------------------------------------------
+$$ Define the nominal result point
+$$
+$$ The nominal vector defines the theoretical surface direction.
+$$ POINT_MEASURE will generate an auxiliary surrounding plane and measure
+$$ the configured number of probing points around this nominal position.
+$$ ----------------------------------------------------------------------------
+
+elmname = ASSIGN/'SURFACE_POINT'
+
+F(@elmname)=FEAT/POINT,CART,$
+  480.000,263.000,83.400,$
+  0.00000,0.00000,1.00000
+
+$$ ----------------------------------------------------------------------------
+$$ Measure the point using the surrounding-plane strategy
+$$
+$$ Internal processing:
+$$
+$$   1. calculate the technical measurement position
+$$   2. build two orthogonal vectors in the nominal surface
+$$   3. distribute five probing points on a radius of 2.5 mm
+$$   4. measure the surrounding plane
+$$   5. determine the actual plane position and normal vector
+$$   6. construct the final actual point from:
+$$
+$$        actual measured plane
+$$                 +
+$$        theoretical line through the nominal point
+$$
+$$ With snap_to_axis = 0, the theoretical line follows the nominal
+$$ point vector.
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_MEASURE),$
+  elmname,$
+  vector_convention,$
+  inverse_direction,$
+  thickness,$
+  moffset,$
+  snap_to_axis,$
+  surface_point_count,$
+  surface_point_distance,$
+  '',$
+  '',$
+  ''
+
+$$ ----------------------------------------------------------------------------
+$$ Reset tolerance/output state for this point
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_OUTPUT_RESET)
+
+$$ ----------------------------------------------------------------------------
+$$ Create explicit coordinate tolerances
+$$
+$$ Axis mask:
+$$   1 = X
+$$   2 = Y
+$$   3 = X + Y
+$$   4 = Z
+$$
+$$ This example uses a Z coordinate tolerance because the nominal point
+$$ vector is aligned with the Z axis.
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_TOL_CORTOL),$
+  elmname,$
+  4,$
+  0.0,0.0,$
+  0.0,0.0,$
+  -0.500,0.500
+
+$$ ----------------------------------------------------------------------------
+$$ Create a generic normal/profile tolerance
+$$
+$$ output_convention = 0 -> generic convention
+$$ tolerance name     = <point_name>N
+$$ tolerance type     = PROFS
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_TOL_NORMAL),$
+  elmname,$
+  0,$
+  -0.500,$
+  0.500
+
+$$ ----------------------------------------------------------------------------
+$$ Write measurement results
+$$
+$$ feature_output = 2 -> nominal and actual feature output (F and FA)
+$$ output_style   = 1 -> combined output
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_OUTPUT_WRITE),$
+  elmname,$
+  2,$
+  1
+
+ENDFIL

@@ -1,0 +1,32 @@
+FILNAM/'point-surface-plane.dmo',05.2
+$$ ************************************************************************
+$$ WM | Quartis(R) R2026-2 (4.34.0.43851-b7c8b7c04c99) : DMIS Results Export
+$$ Copyright (c) 2026, WENZEL Metromec AG, Switzerland
+$$ Part Program        : point-surface-plane
+$$ Workpiece           : 1
+$$ Description           : REFERENZKOERPER FUER VERGLEICHSMESS
+$$ Drawing No.           : 11-38D610762
+$$ Comment           : 
+$$ Measurement         : 1
+$$ Description           : 
+$$ Executed by         : werner
+$$ ************************************************************************
+ 
+OUTPUT/R(R_DATE_HEADER)
+DATE = 2026/11/22
+ 
+OUTPUT/R(R_TIME_HEADER)
+TIME = 15:31:14
+ 
+OUTPUT/F(SURFACE_POINT),T(SURFACE_POINTZ),T(SURFACE_POINTN)
+F(SURFACE_POINT)=FEAT/POINT,CART,480.000000,263.000000,83.400000,0.000000, $
+    0.000000,1.000000
+T(SURFACE_POINTZ)=TOL/CORTOL,ZAXIS,-0.500000,0.500000
+T(SURFACE_POINTN)=TOL/PROFS,-0.500000,0.500000
+ 
+OUTPUT/FA(SURFACE_POINT),TA(SURFACE_POINTZ),TA(SURFACE_POINTN)
+FA(SURFACE_POINT)=FEAT/POINT,CART,480.000000,263.000000,83.400000,0.000000, $
+    0.000000,1.000000
+TA(SURFACE_POINTZ)=TOL/CORTOL,ZAXIS,0.000000,INTOL
+TA(SURFACE_POINTN)=TOL/PROFS,0.000000,0.000000,INTOL
+ENDFIL

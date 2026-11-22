@@ -1,0 +1,362 @@
+DMISMN/'tolerance-output.dmi'
+
+$$ ============================================================================
+$$ EXAMPLE: Point tolerance and output strategies
+$$
+$$ This example demonstrates how the DMIS Macro Library separates:
+$$
+$$   point measurement
+$$       -> tolerance generation
+$$       -> result output
+$$
+$$ Two point features are processed using the same tolerance configuration:
+$$
+$$   OUTPUT_SEPARATE
+$$       -> one OUTPUT statement for every prepared tolerance
+$$
+$$   OUTPUT_COMBINED
+$$       -> one combined OUTPUT statement for each selected feature
+$$
+$$ Both examples prepare:
+$$
+$$   - X coordinate tolerance
+$$   - Y coordinate tolerance
+$$   - Z coordinate tolerance
+$$   - normal/profile tolerance
+$$   - 3D position tolerance
+$$
+$$ Probe selection, safe machine travel, clearance positions and
+$$ machine-specific configuration must be validated for the target system.
+$$
+$$ WARNING:
+$$ Do not run this example on physical measurement equipment without
+$$ validating all positions, probe configurations and movements first.
+$$ ============================================================================
+
+DISPLY/TERM,DMIS,STOR,DMIS
+FILNAM/'tolerance-output.dmo',05.2
+
+UNITS/MM,ANGDEC
+MODE/PROG,MAN
+
+$$ ----------------------------------------------------------------------------
+$$ Base coordinate system
+$$ ----------------------------------------------------------------------------
+
+D(WCS0)=TRANS/XORIG,0.0000,YORIG,0.0000,ZORIG,0.0000
+SAVE/D(WCS0)
+
+$$ ----------------------------------------------------------------------------
+$$ Report header
+$$ ----------------------------------------------------------------------------
+
+R(R_DATE_HEADER)=REPORT/DATE
+OUTPUT/R(R_DATE_HEADER)
+
+R(R_TIME_HEADER)=REPORT/TIME
+OUTPUT/R(R_TIME_HEADER)
+
+$$ ----------------------------------------------------------------------------
+$$ Probe configuration
+$$
+$$ Replace the sensor selection with a sensor configuration that is valid
+$$ for the target measurement system.
+$$ ----------------------------------------------------------------------------
+
+SNSET/APPRCH,6
+SNSET/RETRCT,6
+SNSLCT/SA(2012)
+
+$$ ----------------------------------------------------------------------------
+$$ Example parameters
+$$ ----------------------------------------------------------------------------
+
+DECL/LOCAL,INTGR,vector_convention,inverse_direction
+DECL/LOCAL,INTGR,surface_point_count,snap_to_axis
+
+DECL/LOCAL,REAL,thickness,moffset
+DECL/LOCAL,REAL,surface_point_distance
+
+DECL/LOCAL,INTGR,feature_output
+DECL/LOCAL,INTGR,output_style
+DECL/LOCAL,INTGR,output_convention
+
+DECL/LOCAL,CHAR,64,elmname
+
+$$ ----------------------------------------------------------------------------
+$$ Shared measurement strategy
+$$
+$$ vector_convention = 0 -> nominal vector points away from the material
+$$ inverse_direction = 0 -> default measurement side
+$$ thickness         = 0 -> no material-thickness correction
+$$ moffset           = 0 -> no additional measurement offset
+$$ snap_to_axis      = 0 -> keep the measured point direction
+$$
+$$ surface_point_count = 1 -> direct single-point measurement
+$$ ----------------------------------------------------------------------------
+
+vector_convention = ASSIGN/0
+inverse_direction = ASSIGN/0
+
+thickness = ASSIGN/0.0
+moffset = ASSIGN/0.0
+
+snap_to_axis = ASSIGN/0
+
+surface_point_count = ASSIGN/1
+surface_point_distance = ASSIGN/0.0
+
+$$ ----------------------------------------------------------------------------
+$$ Shared output configuration
+$$
+$$ feature_output = 2 -> output nominal and actual features (F and FA)
+$$
+$$ output_convention = 0 -> generic tolerance naming
+$$
+$$ Generic tolerance names:
+$$
+$$   X coordinate tolerance: <point_name>X
+$$   Y coordinate tolerance: <point_name>Y
+$$   Z coordinate tolerance: <point_name>Z
+$$   normal tolerance:        <point_name>N
+$$   position tolerance:      <point_name>POS
+$$ ----------------------------------------------------------------------------
+
+feature_output = ASSIGN/2
+output_convention = ASSIGN/0
+
+$$ ============================================================================
+$$ EXAMPLE 1: SEPARATE OUTPUT
+$$ ============================================================================
+$$
+$$ Every prepared tolerance is written using an individual OUTPUT statement.
+$$
+$$ For nominal and actual feature output, the result conceptually contains:
+$$
+$$   OUTPUT/F(...),T(X tolerance)
+$$   OUTPUT/FA(...),TA(X tolerance)
+$$
+$$   OUTPUT/F(...),T(Y tolerance)
+$$   OUTPUT/FA(...),TA(Y tolerance)
+$$
+$$   OUTPUT/F(...),T(Z tolerance)
+$$   OUTPUT/FA(...),TA(Z tolerance)
+$$
+$$   OUTPUT/F(...),T(normal tolerance)
+$$   OUTPUT/FA(...),TA(normal tolerance)
+$$
+$$   OUTPUT/F(...),T(position tolerance)
+$$   OUTPUT/FA(...),TA(position tolerance)
+$$ ============================================================================
+
+elmname = ASSIGN/'OUTPUT_SEPARATE'
+
+$$ ----------------------------------------------------------------------------
+$$ Define the first nominal point
+$$
+$$ Adjust the nominal position if required for the target CAD model.
+$$ ----------------------------------------------------------------------------
+
+F(@elmname)=FEAT/POINT,CART,$
+  472.000,271.000,83.400,$
+  0.00000,0.00000,1.00000
+
+$$ ----------------------------------------------------------------------------
+$$ Measure the first point
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_MEASURE),$
+  elmname,$
+  vector_convention,$
+  inverse_direction,$
+  thickness,$
+  moffset,$
+  snap_to_axis,$
+  surface_point_count,$
+  surface_point_distance,$
+  '',$
+  '',$
+  ''
+
+$$ ----------------------------------------------------------------------------
+$$ Reset tolerance/output state
+$$
+$$ This prevents tolerance state from another point from being reused.
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_OUTPUT_RESET)
+
+$$ ----------------------------------------------------------------------------
+$$ Create explicit X, Y and Z coordinate tolerances
+$$
+$$ Axis mask:
+$$   1 = X
+$$   2 = Y
+$$   3 = X + Y
+$$   4 = Z
+$$   5 = X + Z
+$$   6 = Y + Z
+$$   7 = X + Y + Z
+$$
+$$ This example uses mask 7.
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_TOL_CORTOL),$
+  elmname,$
+  7,$
+  -0.500,0.500,$
+  -0.600,0.600,$
+  -0.700,0.700
+
+$$ ----------------------------------------------------------------------------
+$$ Create a generic normal/profile tolerance
+$$
+$$ output_convention = 0
+$$ tolerance name     = OUTPUT_SEPARATEN
+$$ tolerance type     = PROFS
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_TOL_NORMAL),$
+  elmname,$
+  output_convention,$
+  -0.500,$
+  1.000
+
+$$ ----------------------------------------------------------------------------
+$$ Create a generic 3D position tolerance
+$$
+$$ output_convention = 0
+$$ tolerance name     = OUTPUT_SEPARATEPOS
+$$ tolerance type     = POS, 3D
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_TOL_POSITION),$
+  elmname,$
+  output_convention,$
+  1.000
+
+$$ ----------------------------------------------------------------------------
+$$ Write separate result output
+$$
+$$ feature_output = 2 -> nominal and actual feature output
+$$ output_style   = 0 -> separate OUTPUT statements
+$$ ----------------------------------------------------------------------------
+
+output_style = ASSIGN/0
+
+CALL/M(POINT_OUTPUT_WRITE),$
+  elmname,$
+  feature_output,$
+  output_style
+
+$$ ----------------------------------------------------------------------------
+$$ Example clearance move
+$$
+$$ Adapt or replace this movement for the target machine and fixture.
+$$ ----------------------------------------------------------------------------
+
+GOTO/INCR,8.000,0.000,1.000,0.000
+
+$$ ============================================================================
+$$ EXAMPLE 2: COMBINED OUTPUT
+$$ ============================================================================
+$$
+$$ All prepared tolerances are written in one combined OUTPUT statement
+$$ per selected feature.
+$$
+$$ For nominal and actual output, the result conceptually contains:
+$$
+$$   OUTPUT/F(...),T(X),T(Y),T(Z),T(NORMAL),T(POSITION)
+$$
+$$   OUTPUT/FA(...),TA(X),TA(Y),TA(Z),TA(NORMAL),TA(POSITION)
+$$
+$$ The tolerance configuration is intentionally identical to Example 1.
+$$ Only output_style is changed.
+$$ ============================================================================
+
+elmname = ASSIGN/'OUTPUT_COMBINED'
+
+$$ ----------------------------------------------------------------------------
+$$ Define the second nominal point
+$$
+$$ The second point is offset from the first point so both features can be
+$$ inspected separately in the Quartis graphics view.
+$$
+$$ Adjust the nominal position if required for the target CAD model.
+$$ ----------------------------------------------------------------------------
+
+F(@elmname)=FEAT/POINT,CART,$
+  480.000,271.000,83.400,$
+  0.00000,0.00000,1.00000
+
+$$ ----------------------------------------------------------------------------
+$$ Measure the second point
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_MEASURE),$
+  elmname,$
+  vector_convention,$
+  inverse_direction,$
+  thickness,$
+  moffset,$
+  snap_to_axis,$
+  surface_point_count,$
+  surface_point_distance,$
+  '',$
+  '',$
+  ''
+
+$$ ----------------------------------------------------------------------------
+$$ Reset tolerance/output state
+$$
+$$ The reset is required even though both points use the same tolerance
+$$ configuration. Output state belongs logically to one point at a time.
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_OUTPUT_RESET)
+
+$$ ----------------------------------------------------------------------------
+$$ Create the same X, Y and Z coordinate tolerances as in Example 1
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_TOL_CORTOL),$
+  elmname,$
+  7,$
+  -0.500,0.500,$
+  -0.600,0.600,$
+  -0.700,0.700
+
+$$ ----------------------------------------------------------------------------
+$$ Create the same generic normal/profile tolerance as in Example 1
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_TOL_NORMAL),$
+  elmname,$
+  output_convention,$
+  -0.500,$
+  1.000
+
+$$ ----------------------------------------------------------------------------
+$$ Create the same generic 3D position tolerance as in Example 1
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_TOL_POSITION),$
+  elmname,$
+  output_convention,$
+  1.000
+
+$$ ----------------------------------------------------------------------------
+$$ Write combined result output
+$$
+$$ feature_output = 2 -> nominal and actual feature output
+$$ output_style   = 1 -> combined OUTPUT statement per feature
+$$ ----------------------------------------------------------------------------
+
+output_style = ASSIGN/1
+
+CALL/M(POINT_OUTPUT_WRITE),$
+  elmname,$
+  feature_output,$
+  output_style
+
+ENDFIL

@@ -1,0 +1,185 @@
+DMISMN/'point-referenced-with-deviation.dmi'
+
+$$ ============================================================================
+$$ EXAMPLE: Referenced point measurement with simulated deviation
+$$
+$$ This example demonstrates the referenced DMIS Macro Library workflow:
+$$
+$$   measure reference point
+$$       -> determine reference deviation
+$$       -> measure target point using ref_z
+$$       -> prepare tolerances
+$$       -> write output
+$$
+$$ Probe selection, safe machine travel, clearance positions and
+$$ machine-specific configuration must be validated for the target system.
+$$
+$$ WARNING:
+$$ Do not run this example on physical measurement equipment without
+$$ validating all positions, probe configurations and movements first.
+$$ ============================================================================
+
+DISPLY/TERM,DMIS,STOR,DMIS
+FILNAM/'point-referenced-with-deviation.dmo',05.2
+
+UNITS/MM,ANGDEC
+MODE/PROG,MAN
+
+$$ ----------------------------------------------------------------------------
+$$ Base coordinate system
+$$ ----------------------------------------------------------------------------
+
+D(WCS0)=TRANS/XORIG,0.0000,YORIG,0.0000,ZORIG,0.0000
+SAVE/D(WCS0)
+
+$$ ----------------------------------------------------------------------------
+$$ Report header
+$$ ----------------------------------------------------------------------------
+
+R(R_DATE_HEADER)=REPORT/DATE
+OUTPUT/R(R_DATE_HEADER)
+
+R(R_TIME_HEADER)=REPORT/TIME
+OUTPUT/R(R_TIME_HEADER)
+
+$$ ----------------------------------------------------------------------------
+$$ Probe configuration
+$$
+$$ Replace the sensor selection with a sensor configuration that is valid
+$$ for the target measurement system.
+$$ ----------------------------------------------------------------------------
+
+SNSET/APPRCH,6
+SNSET/RETRCT,6
+SNSLCT/SA(2628)
+
+$$ ----------------------------------------------------------------------------
+$$ Example parameters
+$$ ----------------------------------------------------------------------------
+
+DECL/LOCAL,INTGR,vector_convention,inverse_direction
+DECL/LOCAL,INTGR,surface_point_count,snap_to_axis
+
+DECL/LOCAL,REAL,thickness,moffset
+DECL/LOCAL,REAL,surface_point_distance
+
+DECL/LOCAL,CHAR,64,elmname
+
+$$ ----------------------------------------------------------------------------
+$$ Measurement strategy
+$$
+$$ vector_convention = 0 -> nominal vector points away from the material
+$$ inverse_direction = 0 -> default measurement side
+$$ thickness         = 0 -> no material-thickness correction
+$$ moffset           = 0 -> no additional measurement offset
+$$ snap_to_axis      = 0 -> keep the measured point direction
+$$
+$$ surface_point_count = 1 -> direct single-point measurement
+$$ ----------------------------------------------------------------------------
+
+vector_convention = ASSIGN/0
+inverse_direction = ASSIGN/0
+
+thickness = ASSIGN/0.0
+moffset = ASSIGN/0.0
+
+snap_to_axis = ASSIGN/0
+
+surface_point_count = ASSIGN/1
+surface_point_distance = ASSIGN/0.0
+
+$$ ----------------------------------------------------------------------------
+$$ Define and measure the reference point with simulated Z deviation
+$$ ----------------------------------------------------------------------------
+$$ The nominal Z coordinate is 83.4 mm.
+$$ PTMEAS intentionally uses Z = 86.4 mm to simulate
+$$ an actual reference deviation of +3.0 mm.
+
+elmname = ASSIGN/'REFERENCE_Z'
+
+F(@elmname)=FEAT/POINT,CART,$
+  472.000,271.000,83.400,$
+  0.00000,0.00000,1.00000
+
+$$ Simulate +3.0 mm actual Z deviation.
+MEAS/POINT,F(@elmname),1
+  PTMEAS/CART,$
+    472.000,271.000,86.400,$
+    0.00000,0.00000,1.00000
+ENDMES
+
+$$ Example clearance move between the two measurements.
+$$ Adapt or replace this movement for the target machine and fixture.
+GOTO/INCR,8,0.0,1.0,0.0
+
+$$ ----------------------------------------------------------------------------
+$$ Measure the target point with Z reference compensation
+$$
+$$ ref_x = ''            -> no X reference
+$$ ref_y = ''            -> no Y reference
+$$ ref_z = 'REFERENCE_Z' -> use the measured Z deviation of REFERENCE_Z
+$$
+$$ The reference deviation shifts the technical probing position.
+$$ It is intentionally not removed from the final measured result.
+$$ ----------------------------------------------------------------------------
+
+elmname = ASSIGN/'TARGET_POINT'
+F(@elmname)=FEAT/POINT,CART,472,273,82.8,0.0,1.0,0.0
+CALL/M(POINT_MEASURE),$
+  elmname,$
+  vector_convention,$
+  inverse_direction,$
+  thickness,$
+  moffset,$
+  snap_to_axis,$
+  surface_point_count,$
+  surface_point_distance,$
+  '','','REFERENCE_Z'
+
+$$ ----------------------------------------------------------------------------
+$$ Prepare output state and tolerances
+$$
+$$ POINT_TOL_MAIN_AXES:
+$$   - dominant axis is always selected
+$$   - secondary axes are selected using a 20 degree limit
+$$   - coordinate limits are derived from the normal tolerance
+$$
+$$ POINT_TOL_NORMAL:
+$$   output_convention = 1 -> Volkswagen / Audi convention
+$$
+$$ POINT_TOL_POSITION:
+$$   output_convention = 1 -> Volkswagen / Audi convention
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_OUTPUT_RESET)
+
+CALL/M(POINT_TOL_MAIN_AXES),$
+  elmname,$
+  20.0,$
+  -0.5,$
+  1.0
+
+CALL/M(POINT_TOL_NORMAL),$
+  elmname,$
+  1,$
+  -0.5,$
+  1.0
+
+CALL/M(POINT_TOL_POSITION),$
+  elmname,$
+  1,$
+  0.5
+
+$$ ----------------------------------------------------------------------------
+$$ Write the prepared results
+$$
+$$ feature_output = 2 -> nominal and actual (F and FA)
+$$ output_style   = 1 -> combined output
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_OUTPUT_WRITE),$
+  elmname,$
+  2,$
+  1
+
+ENDFIL

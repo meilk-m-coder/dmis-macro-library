@@ -1,0 +1,2522 @@
+DMISMD/'QuartisSystemMacros',05.2
+
+$$ ============================================================================
+$$ DMIS MACRO LIBRARY
+$$ ============================================================================
+$$
+$$ Library:          DMIS Macro Library
+$$ Target system:    WM | Quartis
+$$ DMIS version:     5.2
+$$ Library version:  0.1.0
+$$ Status:           Experimental
+$$ Author:           meilk-m-coder
+$$ License:          MIT
+$$
+$$ Repository:
+$$ https://github.com/meilk-m-coder/dmis-macro-library
+$$
+$$ This library provides reusable macros for point measurement,
+$$ tolerance generation and result output.
+$$
+$$ ============================================================================
+
+$$ ========================= GLOBAL LIBRARY STATE =============================
+
+$$ ----------------------------------------------------------------------------
+$$ GLOBAL POINT OUTPUT STATE
+$$ ----------------------------------------------------------------------------
+$$ point_main_axis:
+$$   Dominant axis of the nominal point vector.
+$$
+$$   1 = X
+$$   2 = Y
+$$   4 = Z
+
+DECL/GLOBAL,INTGR,point_main_axis
+
+$$ point_axis_mask:
+$$   Coordinate tolerances currently prepared for output.
+$$
+$$   0 = no coordinate tolerance
+$$   1 = X
+$$   2 = Y
+$$   3 = X + Y
+$$   4 = Z
+$$   5 = X + Z
+$$   6 = Y + Z
+$$   7 = X + Y + Z
+
+DECL/GLOBAL,INTGR,point_axis_mask
+
+$$ point_normal_active:
+$$   0 = no normal tolerance prepared
+$$   1 = normal tolerance prepared
+
+DECL/GLOBAL,INTGR,point_normal_active
+
+$$ point_position_active:
+$$   0 = no position tolerance prepared
+$$   1 = position tolerance prepared
+
+DECL/GLOBAL,INTGR,point_position_active
+
+$$ Names of the currently prepared point tolerances.
+
+DECL/GLOBAL,CHAR,64,point_tol_x_name
+DECL/GLOBAL,CHAR,64,point_tol_y_name
+DECL/GLOBAL,CHAR,64,point_tol_z_name
+DECL/GLOBAL,CHAR,64,point_tol_normal_name
+DECL/GLOBAL,CHAR,64,point_tol_position_name
+
+$$ ========================== GENERAL UTILITIES ===============================
+
+$$ ----------------------------------------------------------------------------
+$$ POINT OUTPUT AXIS SELECTION
+$$ ----------------------------------------------------------------------------
+$$
+$$ Determines the dominant axis and the axes relevant for
+$$ output according to an angular limit.
+$$
+$$ The feature vector is read directly from the nominal point.
+$$
+$$ Results:
+$$
+$$ point_main_axis:
+$$   1 = X
+$$   2 = Y
+$$   4 = Z
+$$
+$$ point_axis_mask:
+$$   1 = X
+$$   2 = Y
+$$   4 = Z
+$$   3 = X + Y
+$$   5 = X + Z
+$$   6 = Y + Z
+$$   7 = X + Y + Z
+$$
+$$ angle_limit:
+$$   0.0 = dominant axis only
+$$   > 0 = add secondary axes whose absolute vector component
+$$         reaches the angular limit
+$$ ----------------------------------------------------------------------------
+
+M(POINT_GET_MAIN_AXES)=MACRO/point_name,angle_limit
+
+  DECL/LOCAL,REAL,plan_i,plan_j,plan_k
+  DECL/LOCAL,REAL,abs_i,abs_j,abs_k
+  DECL/LOCAL,REAL,component_limit
+  DECL/LOCAL,REAL,pi_value
+
+  DECL/LOCAL,VECTOR,plan_vec
+
+  $$ -----------------------------------------------------------
+  $$ Read and normalize the nominal point vector
+  $$ -----------------------------------------------------------
+
+  plan_i = OBTAIN/F(@point_name),6
+  plan_j = OBTAIN/F(@point_name),7
+  plan_k = OBTAIN/F(@point_name),8
+
+  plan_vec = ASSIGN/VUNIT(VCART(plan_i,plan_j,plan_k))
+
+  plan_i = ASSIGN/VECX(plan_vec)
+  plan_j = ASSIGN/VECY(plan_vec)
+  plan_k = ASSIGN/VECZ(plan_vec)
+
+  abs_i = ASSIGN/ABS(plan_i)
+  abs_j = ASSIGN/ABS(plan_j)
+  abs_k = ASSIGN/ABS(plan_k)
+
+  $$ -----------------------------------------------------------
+  $$ Determine the dominant axis
+  $$ -----------------------------------------------------------
+
+  IF/((abs_i .GE. abs_j) .AND. $
+      (abs_i .GE. abs_k))
+
+    point_main_axis = ASSIGN/1
+
+  ELSE
+
+    IF/(abs_j .GE. abs_k)
+      point_main_axis = ASSIGN/2
+    ELSE
+      point_main_axis = ASSIGN/4
+    ENDIF
+
+  ENDIF
+
+  $$ Start with the dominant axis only.
+
+  point_axis_mask = ASSIGN/point_main_axis
+
+  $$ -----------------------------------------------------------
+  $$ Add secondary axes according to the angular limit
+  $$ -----------------------------------------------------------
+
+  IF/(angle_limit .GT. 0.0)
+
+    pi_value = ASSIGN/3.14159265358979
+
+    component_limit = ASSIGN/$
+      SIN(angle_limit * pi_value / 180.0)
+
+    $$ ---------------------------------------------------------
+    $$ X axis
+    $$ ---------------------------------------------------------
+
+    IF/(abs_i .GE. component_limit)
+
+      IF/((point_axis_mask .EQ. 2) .OR. $
+          (point_axis_mask .EQ. 4) .OR. $
+          (point_axis_mask .EQ. 6))
+
+        point_axis_mask = ASSIGN/point_axis_mask + 1
+
+      ENDIF
+
+    ENDIF
+
+    $$ ---------------------------------------------------------
+    $$ Y axis
+    $$ ---------------------------------------------------------
+
+    IF/(abs_j .GE. component_limit)
+
+      IF/((point_axis_mask .EQ. 1) .OR. $
+          (point_axis_mask .EQ. 4) .OR. $
+          (point_axis_mask .EQ. 5))
+
+        point_axis_mask = ASSIGN/point_axis_mask + 2
+
+      ENDIF
+
+    ENDIF
+
+    $$ ---------------------------------------------------------
+    $$ Z axis
+    $$ ---------------------------------------------------------
+
+    IF/(abs_k .GE. component_limit)
+
+      IF/((point_axis_mask .EQ. 1) .OR. $
+          (point_axis_mask .EQ. 2) .OR. $
+          (point_axis_mask .EQ. 3))
+
+        point_axis_mask = ASSIGN/point_axis_mask + 4
+
+      ENDIF
+
+    ENDIF
+
+  ENDIF
+
+ENDMAC
+
+$$ ==================== GENERIC MEASUREMENT FUNCTIONS =========================
+
+$$ ----------------------------------------------------------------------------
+$$ GENERIC POINT MEASUREMENT
+$$ ----------------------------------------------------------------------------
+$$
+$$ The nominal point feature must already exist in the part
+$$ program. Pass its feature name as a character string.
+$$
+$$ OBTAIN indices for a nominal point feature:
+$$   3 = X
+$$   4 = Y
+$$   5 = Z
+$$   6 = I
+$$   7 = J
+$$   8 = K
+$$
+$$ vector_convention:
+$$   0 = nominal vector points away from the material
+$$   1 = nominal vector points through the material
+$$
+$$ inverse_direction:
+$$   0 = measure from the default side
+$$   1 = measure from the opposite side
+$$
+$$ snap_to_axis:
+$$   0 = keep all actual coordinates
+$$   1 = snap secondary coordinates to nominal
+$$
+$$ surface_point_count:
+$$   0 to 2 = measure a single point
+$$   >= 3   = measure a surrounding plane
+$$
+$$ The measured or constructed actual feature always uses the
+$$ original plan-feature name.
+$$
+$$ Current implementation:
+$$   - direct single-point measurement
+$$   - customer-specific vector convention
+$$   - inverse measurement direction
+$$   - material-thickness correction
+$$   - additional measurement offset
+$$   - correction back to the nominal plan point
+$$   - snapping to the dominant coordinate axis
+$$   - surrounding-plane measurement
+$$   - actual surface-vector evaluation
+$$   - combination of surrounding plane and axis snapping
+$$
+$$ ----------------------------------------------------------------------------
+
+M(POINT_MEASURE)=MACRO/point_name,$
+                       vector_convention,$
+                       inverse_direction,$
+                       thickness,$
+                       moffset,$
+                       snap_to_axis,$
+                       surface_point_count,$
+                       surface_point_distance,$
+                       ref_x,$
+                       ref_y,$
+                       ref_z
+
+  DECL/LOCAL,INTGR,loop
+
+  DECL/LOCAL,REAL,pi_value
+  DECL/LOCAL,REAL,angle_value
+  DECL/LOCAL,REAL,point_x,point_y,point_z
+
+  DECL/LOCAL,REAL,plane_x,plane_y,plane_z
+  DECL/LOCAL,REAL,plane_i,plane_j,plane_k
+
+  DECL/LOCAL,REAL,basis1_i,basis1_j,basis1_k
+  DECL/LOCAL,REAL,basis2_i,basis2_j,basis2_k
+
+  DECL/LOCAL,REAL,result_i,result_j,result_k
+
+  DECL/LOCAL,VECTOR,reference_vec
+  DECL/LOCAL,VECTOR,basis1_vec
+  DECL/LOCAL,VECTOR,basis2_vec
+  DECL/LOCAL,VECTOR,result_vec
+
+  DECL/LOCAL,REAL,plan_x,plan_y,plan_z
+  DECL/LOCAL,REAL,plan_i,plan_j,plan_k
+
+  DECL/LOCAL,REAL,actual_x,actual_y,actual_z
+  DECL/LOCAL,REAL,line_ref_i,line_ref_j,line_ref_k
+
+  DECL/LOCAL,REAL,ref_offset_x
+  DECL/LOCAL,REAL,ref_offset_y
+  DECL/LOCAL,REAL,ref_offset_z
+
+  DECL/LOCAL,REAL,ref_nominal_value
+  DECL/LOCAL,REAL,ref_actual_value
+
+  DECL/LOCAL,REAL,shift_distance
+
+  DECL/LOCAL,REAL,measure_x,measure_y,measure_z
+  DECL/LOCAL,REAL,measure_i,measure_j,measure_k
+
+  DECL/LOCAL,REAL,result_shift_x
+  DECL/LOCAL,REAL,result_shift_y
+  DECL/LOCAL,REAL,result_shift_z
+
+  DECL/LOCAL,REAL,axis_i,axis_j,axis_k
+  DECL/LOCAL,REAL,abs_i,abs_j,abs_k
+
+  DECL/LOCAL,VECTOR,plan_vec
+  DECL/LOCAL,VECTOR,measure_vec
+  DECL/LOCAL,VECTOR,axis_vec
+
+  DECL/LOCAL,CHAR,64,plane_name
+  DECL/LOCAL,CHAR,64,line_name
+
+  $$ -----------------------------------------------------------
+  $$ Read the nominal point definition
+  $$ -----------------------------------------------------------
+
+  plan_x = OBTAIN/F(@point_name),3
+  plan_y = OBTAIN/F(@point_name),4
+  plan_z = OBTAIN/F(@point_name),5
+
+  plan_i = OBTAIN/F(@point_name),6
+  plan_j = OBTAIN/F(@point_name),7
+  plan_k = OBTAIN/F(@point_name),8
+
+  plan_vec = ASSIGN/VUNIT(VCART(plan_i,plan_j,plan_k))
+
+  measure_i = ASSIGN/VECX(plan_vec)
+  measure_j = ASSIGN/VECY(plan_vec)
+  measure_k = ASSIGN/VECZ(plan_vec)
+
+  $$ -----------------------------------------------------------
+  $$ Determine reference-feature coordinate deviations
+  $$
+  $$ Each reference feature is optional and applies to one
+  $$ coordinate axis only.
+  $$
+  $$ Reference offset:
+  $$
+  $$   actual coordinate - nominal coordinate
+  $$
+  $$ An empty feature name disables reference compensation for
+  $$ the corresponding coordinate axis.
+  $$ -----------------------------------------------------------
+
+  ref_offset_x = ASSIGN/0.0
+  ref_offset_y = ASSIGN/0.0
+  ref_offset_z = ASSIGN/0.0
+
+  $$ -----------------------------------------------------------
+  $$ X reference
+  $$ -----------------------------------------------------------
+
+  IF/(ref_x .NE. '')
+
+    ref_nominal_value = OBTAIN/F(@ref_x),3
+    ref_actual_value = OBTAIN/FA(@ref_x),3
+
+    ref_offset_x = ASSIGN/$
+      ref_actual_value - ref_nominal_value
+
+  ENDIF
+
+  $$ -----------------------------------------------------------
+  $$ Y reference
+  $$ -----------------------------------------------------------
+
+  IF/(ref_y .NE. '')
+
+    ref_nominal_value = OBTAIN/F(@ref_y),4
+    ref_actual_value = OBTAIN/FA(@ref_y),4
+
+    ref_offset_y = ASSIGN/$
+      ref_actual_value - ref_nominal_value
+
+  ENDIF
+
+  $$ -----------------------------------------------------------
+  $$ Z reference
+  $$ -----------------------------------------------------------
+
+  IF/(ref_z .NE. '')
+
+    ref_nominal_value = OBTAIN/F(@ref_z),5
+    ref_actual_value = OBTAIN/FA(@ref_z),5
+
+    ref_offset_z = ASSIGN/$
+      ref_actual_value - ref_nominal_value
+
+  ENDIF
+
+  shift_distance = ASSIGN/0.0
+
+  $$ -----------------------------------------------------------
+  $$ Determine the material-side correction
+  $$ -----------------------------------------------------------
+
+  IF/(vector_convention .EQ. 1)
+
+    $$ Mercedes-Benz convention:
+    $$ The nominal vector points through the material.
+
+    IF/(inverse_direction .EQ. 0)
+
+      $$ Measure on the opposite material surface.
+      $$ Shift the measurement position by the material
+      $$ thickness in nominal vector direction.
+
+      shift_distance = ASSIGN/thickness
+
+    ELSE
+
+      $$ Measure from the design side.
+      $$ Do not apply the material thickness.
+      $$ Reverse the active measurement vector.
+
+      measure_i = ASSIGN/-measure_i
+      measure_j = ASSIGN/-measure_j
+      measure_k = ASSIGN/-measure_k
+
+    ENDIF
+
+  ELSE
+
+    $$ Standard convention:
+    $$ The nominal vector points away from the material.
+
+    IF/(inverse_direction .EQ. 1)
+
+      $$ Measure from the opposite material side.
+      $$ Shift through the material and reverse the active
+      $$ measurement vector.
+
+      shift_distance = ASSIGN/-thickness
+
+      measure_i = ASSIGN/-measure_i
+      measure_j = ASSIGN/-measure_j
+      measure_k = ASSIGN/-measure_k
+
+    ENDIF
+
+  ENDIF
+
+  $$ -----------------------------------------------------------
+  $$ Calculate the technical measurement position
+  $$
+  $$ Technical measurement position:
+  $$
+  $$   nominal position
+  $$   + reference-feature coordinate deviation
+  $$   + material-side correction
+  $$   + measurement offset
+  $$
+  $$ The reference offsets are used only to move the probing
+  $$ position. They are not removed from the measured result.
+  $$ -----------------------------------------------------------
+
+  measure_x = ASSIGN/plan_x + $
+                       ref_offset_x + $
+                       VECX(plan_vec) * shift_distance + $
+                       measure_i * moffset
+
+  measure_y = ASSIGN/plan_y + $
+                       ref_offset_y + $
+                       VECY(plan_vec) * shift_distance + $
+                       measure_j * moffset
+
+  measure_z = ASSIGN/plan_z + $
+                       ref_offset_z + $
+                       VECZ(plan_vec) * shift_distance + $
+                       measure_k * moffset
+
+  measure_vec = ASSIGN/VCART($
+    measure_i,measure_j,measure_k)
+
+  $$ -----------------------------------------------------------
+  $$ Generate auxiliary feature names
+  $$ -----------------------------------------------------------
+
+  plane_name = ASSIGN/CONCAT(point_name,'_PLN')
+  line_name = ASSIGN/CONCAT(point_name,'_LIN')
+
+  $$ -----------------------------------------------------------
+  $$ Determine the dominant nominal axis
+  $$ -----------------------------------------------------------
+
+  abs_i = ASSIGN/ABS(VECX(plan_vec))
+  abs_j = ASSIGN/ABS(VECY(plan_vec))
+  abs_k = ASSIGN/ABS(VECZ(plan_vec))
+
+  axis_i = ASSIGN/0.0
+  axis_j = ASSIGN/0.0
+  axis_k = ASSIGN/0.0
+
+  IF/((abs_i .GE. abs_j) .AND. $
+      (abs_i .GE. abs_k))
+
+    IF/(VECX(plan_vec) .GE. 0.0)
+      axis_i = ASSIGN/1.0
+    ELSE
+      axis_i = ASSIGN/-1.0
+    ENDIF
+
+  ELSE
+
+    IF/(abs_j .GE. abs_k)
+
+      IF/(VECY(plan_vec) .GE. 0.0)
+        axis_j = ASSIGN/1.0
+      ELSE
+        axis_j = ASSIGN/-1.0
+      ENDIF
+
+    ELSE
+
+      IF/(VECZ(plan_vec) .GE. 0.0)
+        axis_k = ASSIGN/1.0
+      ELSE
+        axis_k = ASSIGN/-1.0
+      ENDIF
+
+    ENDIF
+
+  ENDIF
+
+  axis_vec = ASSIGN/VCART(axis_i,axis_j,axis_k)
+
+  $$ -----------------------------------------------------------
+  $$ Select the measurement method
+  $$ -----------------------------------------------------------
+
+  IF/(surface_point_count .LT. 3)
+
+    $$ ---------------------------------------------------------
+    $$ Measure the original plan feature directly
+    $$
+    $$ The nominal feature remains at the original plan point.
+    $$ PTMEAS uses the calculated technical measurement
+    $$ position, including optional reference offsets.
+    $$ ---------------------------------------------------------
+
+    MEAS/POINT,F(@point_name),1
+
+      PTMEAS/CART,$
+        measure_x,measure_y,measure_z,$
+        measure_i,measure_j,measure_k
+
+    ENDMES
+
+    $$ ---------------------------------------------------------
+    $$ Calculate the inverse technical displacement
+    $$
+    $$ Only material-thickness and measurement-offset
+    $$ displacements are removed.
+    $$
+    $$ Reference offsets remain part of the actual result.
+    $$ ---------------------------------------------------------
+
+    result_shift_x = ASSIGN/$
+      -(VECX(plan_vec) * shift_distance + $
+        measure_i * moffset)
+
+    result_shift_y = ASSIGN/$
+      -(VECY(plan_vec) * shift_distance + $
+        measure_j * moffset)
+
+    result_shift_z = ASSIGN/$
+      -(VECZ(plan_vec) * shift_distance + $
+        measure_k * moffset)
+
+    $$ ---------------------------------------------------------
+    $$ Determine the required result processing
+    $$ ---------------------------------------------------------
+
+    IF/(snap_to_axis .EQ. 0)
+
+      $$ -------------------------------------------------------
+      $$ No axis snapping
+      $$ -------------------------------------------------------
+
+      IF/((ABS(result_shift_x) .GE. 0.000001) .OR. $
+          (ABS(result_shift_y) .GE. 0.000001) .OR. $
+          (ABS(result_shift_z) .GE. 0.000001))
+
+        $$ Correct material-thickness and measurement-offset
+        $$ displacement.
+        $$
+        $$ Do not remove reference-feature offsets.
+
+        CONST/POINT,F(@point_name),MOVEPT,$
+          FA(@point_name),$
+          result_shift_x,$
+          result_shift_y,$
+          result_shift_z
+
+      ENDIF
+
+    ELSE
+
+      $$ -------------------------------------------------------
+      $$ Axis snapping
+      $$ -------------------------------------------------------
+
+      $$ First correct material-thickness and measurement-offset
+      $$ displacement when required.
+      $$
+      $$ Do not remove reference-feature offsets.
+
+      IF/((ABS(result_shift_x) .GE. 0.000001) .OR. $
+          (ABS(result_shift_y) .GE. 0.000001) .OR. $
+          (ABS(result_shift_z) .GE. 0.000001))
+
+        CONST/POINT,F(@point_name),MOVEPT,$
+          FA(@point_name),$
+          result_shift_x,$
+          result_shift_y,$
+          result_shift_z
+
+      ENDIF
+
+      $$ -------------------------------------------------------
+      $$ Read the corrected actual point coordinates
+      $$ -------------------------------------------------------
+
+      actual_x = OBTAIN/FA(@point_name),3
+      actual_y = OBTAIN/FA(@point_name),4
+      actual_z = OBTAIN/FA(@point_name),5
+
+      $$ -------------------------------------------------------
+      $$ Create an actual plane through the corrected point
+      $$
+      $$ The plane normal is the nominal point vector.
+      $$ -------------------------------------------------------
+
+      FA(@plane_name)=FEAT/PLANE,CART,$
+        actual_x,actual_y,actual_z,$
+        VECX(plan_vec),$
+        VECY(plan_vec),$
+        VECZ(plan_vec)
+
+      $$ -------------------------------------------------------
+      $$ Determine the line reference vector
+      $$
+      $$ The reference vector must not be parallel to axis_vec.
+      $$ -------------------------------------------------------
+
+      line_ref_i = ASSIGN/0.0
+      line_ref_j = ASSIGN/0.0
+      line_ref_k = ASSIGN/0.0
+
+      IF/(ABS(axis_i) .GT. 0.5)
+
+        $$ Axis-parallel line in X direction.
+        $$ Use Z as the reference vector.
+
+        line_ref_k = ASSIGN/1.0
+
+      ELSE
+
+        $$ Axis-parallel line in Y or Z direction.
+        $$ Use X as the reference vector.
+
+        line_ref_i = ASSIGN/1.0
+
+      ENDIF
+
+      $$ -------------------------------------------------------
+      $$ Create the theoretical axis-parallel line
+      $$ through the original nominal point
+      $$ -------------------------------------------------------
+
+      F(@line_name)=FEAT/LINE,UNBND,CART,$
+        plan_x,plan_y,plan_z,$
+        axis_i,axis_j,axis_k,$
+        line_ref_i,line_ref_j,line_ref_k
+
+      $$ -------------------------------------------------------
+      $$ Construct the snapped result point
+      $$ -------------------------------------------------------
+
+      CONST/POINT,F(@point_name),INTOF,$
+        FA(@plane_name),$
+        F(@line_name)
+
+    ENDIF
+
+  ELSE
+
+    $$ ---------------------------------------------------------
+    $$ Surrounding-plane measurement
+    $$
+    $$ The plane center is based on measure_x, measure_y and
+    $$ measure_z. Therefore all individual plane probing points
+    $$ automatically include the reference-feature offsets.
+    $$ ---------------------------------------------------------
+
+    pi_value = ASSIGN/3.14159265358979
+
+    $$ ---------------------------------------------------------
+    $$ Select a reference vector that is not parallel to the
+    $$ active measurement vector
+    $$ ---------------------------------------------------------
+
+    IF/(ABS(measure_i) .LT. 0.9)
+      reference_vec = ASSIGN/VCART(1.0,0.0,0.0)
+    ELSE
+      reference_vec = ASSIGN/VCART(0.0,1.0,0.0)
+    ENDIF
+
+    $$ ---------------------------------------------------------
+    $$ Build two orthogonal unit vectors in the nominal surface
+    $$ ---------------------------------------------------------
+
+    basis1_vec = ASSIGN/VUNIT($
+      VCROSS(measure_vec,reference_vec))
+
+    basis2_vec = ASSIGN/VUNIT($
+      VCROSS(measure_vec,basis1_vec))
+
+    basis1_i = ASSIGN/VECX(basis1_vec)
+    basis1_j = ASSIGN/VECY(basis1_vec)
+    basis1_k = ASSIGN/VECZ(basis1_vec)
+
+    basis2_i = ASSIGN/VECX(basis2_vec)
+    basis2_j = ASSIGN/VECY(basis2_vec)
+    basis2_k = ASSIGN/VECZ(basis2_vec)
+
+    $$ ---------------------------------------------------------
+    $$ Define and measure the surrounding plane
+    $$
+    $$ The nominal plane is placed at the technical measurement
+    $$ position. All probing points use the active measurement
+    $$ vector.
+    $$ ---------------------------------------------------------
+
+    F(@plane_name)=FEAT/PLANE,CART,$
+      measure_x,measure_y,measure_z,$
+      measure_i,measure_j,measure_k
+
+    MEAS/PLANE,F(@plane_name),surface_point_count
+
+      DO/loop,1,surface_point_count
+
+        angle_value = ASSIGN/$
+          2.0 * pi_value * $
+          (loop - 1) / surface_point_count
+
+        point_x = ASSIGN/measure_x + $
+          surface_point_distance * $
+          (COS(angle_value) * basis1_i + $
+           SIN(angle_value) * basis2_i)
+
+        point_y = ASSIGN/measure_y + $
+          surface_point_distance * $
+          (COS(angle_value) * basis1_j + $
+           SIN(angle_value) * basis2_j)
+
+        point_z = ASSIGN/measure_z + $
+          surface_point_distance * $
+          (COS(angle_value) * basis1_k + $
+           SIN(angle_value) * basis2_k)
+
+        PTMEAS/CART,$
+          point_x,point_y,point_z,$
+          measure_i,measure_j,measure_k
+
+      ENDDO
+
+    ENDMES
+
+    $$ ---------------------------------------------------------
+    $$ Read the measured plane
+    $$
+    $$ The indices 3 to 8 are expected to contain:
+    $$ X, Y, Z, I, J, K
+    $$ ---------------------------------------------------------
+
+    plane_x = OBTAIN/FA(@plane_name),3
+    plane_y = OBTAIN/FA(@plane_name),4
+    plane_z = OBTAIN/FA(@plane_name),5
+
+    plane_i = OBTAIN/FA(@plane_name),6
+    plane_j = OBTAIN/FA(@plane_name),7
+    plane_k = OBTAIN/FA(@plane_name),8
+
+    $$ ---------------------------------------------------------
+    $$ Move the measured plane back from the technical
+    $$ material and measurement-offset position
+    $$
+    $$ Only material-thickness and measurement-offset
+    $$ displacements are removed.
+    $$
+    $$ Reference-feature offsets remain part of the measured
+    $$ actual plane.
+    $$ ---------------------------------------------------------
+
+    plane_x = ASSIGN/plane_x - $
+      (VECX(plan_vec) * shift_distance + $
+       measure_i * moffset)
+
+    plane_y = ASSIGN/plane_y - $
+      (VECY(plan_vec) * shift_distance + $
+       measure_j * moffset)
+
+    plane_z = ASSIGN/plane_z - $
+      (VECZ(plan_vec) * shift_distance + $
+       measure_k * moffset)
+
+    $$ ---------------------------------------------------------
+    $$ Replace the measured plane by the corrected actual plane
+    $$ ---------------------------------------------------------
+
+    FA(@plane_name)=FEAT/PLANE,CART,$
+      plane_x,plane_y,plane_z,$
+      plane_i,plane_j,plane_k
+
+    $$ ---------------------------------------------------------
+    $$ Select the theoretical result-line vector
+    $$ ---------------------------------------------------------
+
+    IF/(snap_to_axis .EQ. 1)
+
+      result_vec = ASSIGN/axis_vec
+
+    ELSE
+
+      result_vec = ASSIGN/plan_vec
+
+    ENDIF
+
+    result_i = ASSIGN/VECX(result_vec)
+    result_j = ASSIGN/VECY(result_vec)
+    result_k = ASSIGN/VECZ(result_vec)
+
+    $$ ---------------------------------------------------------
+    $$ Determine a valid reference vector for the unbounded line
+    $$ ---------------------------------------------------------
+
+    line_ref_i = ASSIGN/0.0
+    line_ref_j = ASSIGN/0.0
+    line_ref_k = ASSIGN/0.0
+
+    IF/(ABS(result_i) .GT. 0.5)
+
+      line_ref_k = ASSIGN/1.0
+
+    ELSE
+
+      line_ref_i = ASSIGN/1.0
+
+    ENDIF
+
+    $$ ---------------------------------------------------------
+    $$ Create the theoretical line through the original
+    $$ plan point
+    $$ ---------------------------------------------------------
+
+    F(@line_name)=FEAT/LINE,UNBND,CART,$
+      plan_x,plan_y,plan_z,$
+      result_i,result_j,result_k,$
+      line_ref_i,line_ref_j,line_ref_k
+
+    $$ ---------------------------------------------------------
+    $$ Construct the final point as the intersection of the
+    $$ corrected actual plane and the theoretical result line
+    $$ ---------------------------------------------------------
+
+    CONST/POINT,F(@point_name),INTOF,$
+      FA(@plane_name),$
+      F(@line_name)
+
+  ENDIF
+
+ENDMAC
+
+$$ ===================== GENERIC TOLERANCE FUNCTIONS ==========================
+
+$$ ----------------------------------------------------------------------------
+$$ POINT COORDINATE TOLERANCES
+$$ ----------------------------------------------------------------------------
+$$
+$$ Creates coordinate tolerances for a point feature.
+$$ No OUTPUT statement is generated.
+$$
+$$ axis_mask:
+$$   1 = X
+$$   2 = Y
+$$   3 = X + Y
+$$   4 = Z
+$$   5 = X + Z
+$$   6 = Y + Z
+$$   7 = X + Y + Z
+$$
+$$ Naming convention:
+$$   T(<point_name>X)
+$$   T(<point_name>Y)
+$$   T(<point_name>Z)
+$$
+$$ Example:
+$$   point_name = 'A2076370509_9027L'
+$$   X tolerance name = 'A2076370509_9027LX'
+$$ ----------------------------------------------------------------------------
+
+M(POINT_TOL_CORTOL)=MACRO/point_name,$
+                          axis_mask,$
+                          x_lower,$
+                          x_upper,$
+                          y_lower,$
+                          y_upper,$
+                          z_lower,$
+                          z_upper
+
+  $$ -----------------------------------------------------------
+  $$ Store the active coordinate-axis mask
+  $$ -----------------------------------------------------------
+
+  point_axis_mask = ASSIGN/axis_mask
+
+  $$ -----------------------------------------------------------
+  $$ Generate tolerance names
+  $$ -----------------------------------------------------------
+
+  point_tol_x_name = ASSIGN/CONCAT(point_name,'X')
+  point_tol_y_name = ASSIGN/CONCAT(point_name,'Y')
+  point_tol_z_name = ASSIGN/CONCAT(point_name,'Z')
+
+  $$ -----------------------------------------------------------
+  $$ X coordinate tolerance
+  $$ -----------------------------------------------------------
+
+  IF/((axis_mask .EQ. 1) .OR. $
+      (axis_mask .EQ. 3) .OR. $
+      (axis_mask .EQ. 5) .OR. $
+      (axis_mask .EQ. 7))
+
+    T(@point_tol_x_name)=TOL/CORTOL,XAXIS,$
+      x_lower,x_upper
+
+  ENDIF
+
+  $$ -----------------------------------------------------------
+  $$ Y coordinate tolerance
+  $$ -----------------------------------------------------------
+
+  IF/((axis_mask .EQ. 2) .OR. $
+      (axis_mask .EQ. 3) .OR. $
+      (axis_mask .EQ. 6) .OR. $
+      (axis_mask .EQ. 7))
+
+    T(@point_tol_y_name)=TOL/CORTOL,YAXIS,$
+      y_lower,y_upper
+
+  ENDIF
+
+  $$ -----------------------------------------------------------
+  $$ Z coordinate tolerance
+  $$ -----------------------------------------------------------
+
+  IF/((axis_mask .EQ. 4) .OR. $
+      (axis_mask .EQ. 5) .OR. $
+      (axis_mask .EQ. 6) .OR. $
+      (axis_mask .EQ. 7))
+
+    T(@point_tol_z_name)=TOL/CORTOL,ZAXIS,$
+      z_lower,z_upper
+
+  ENDIF
+
+ENDMAC
+
+$$ ----------------------------------------------------------------------------
+$$ POINT MAIN-AXIS COORDINATE TOLERANCES
+$$ ----------------------------------------------------------------------------
+$$
+$$ Creates coordinate tolerances derived from the nominal
+$$ point vector and a normal tolerance.
+$$
+$$ The dominant axis is always selected.
+$$ Additional axes are selected according to angle_limit.
+$$
+$$ axis selection:
+$$   1 = X
+$$   2 = Y
+$$   4 = Z
+$$
+$$ Result is stored in the global variable:
+$$   point_axis_mask
+$$
+$$ Coordinate tolerances:
+$$
+$$   axis_value_1 = vector_component * normal_lower
+$$   axis_value_2 = vector_component * normal_upper
+$$
+$$   lower = MIN(axis_value_1,axis_value_2)
+$$   upper = MAX(axis_value_1,axis_value_2)
+$$
+$$ This also handles negative vector components correctly.
+$$
+$$ No OUTPUT statement is generated.
+$$ ----------------------------------------------------------------------------
+
+M(POINT_TOL_MAIN_AXES)=MACRO/point_name,$
+                             angle_limit,$
+                             normal_lower,$
+                             normal_upper
+
+  DECL/LOCAL,REAL,plan_i,plan_j,plan_k
+  DECL/LOCAL,REAL,value_1,value_2
+  DECL/LOCAL,REAL,axis_lower,axis_upper
+
+  DECL/LOCAL,VECTOR,plan_vec
+
+  $$ -----------------------------------------------------------
+  $$ Determine the relevant output axes
+  $$ -----------------------------------------------------------
+
+  CALL/M(POINT_GET_MAIN_AXES),$
+    point_name,$
+    angle_limit
+
+  $$ -----------------------------------------------------------
+  $$ Read and normalize the nominal point vector
+  $$ -----------------------------------------------------------
+
+  plan_i = OBTAIN/F(@point_name),6
+  plan_j = OBTAIN/F(@point_name),7
+  plan_k = OBTAIN/F(@point_name),8
+
+  plan_vec = ASSIGN/VUNIT($
+    VCART(plan_i,plan_j,plan_k))
+
+  plan_i = ASSIGN/VECX(plan_vec)
+  plan_j = ASSIGN/VECY(plan_vec)
+  plan_k = ASSIGN/VECZ(plan_vec)
+
+  $$ -----------------------------------------------------------
+  $$ Generate tolerance names
+  $$ -----------------------------------------------------------
+
+  point_tol_x_name = ASSIGN/CONCAT(point_name,'X')
+  point_tol_y_name = ASSIGN/CONCAT(point_name,'Y')
+  point_tol_z_name = ASSIGN/CONCAT(point_name,'Z')
+
+  $$ -----------------------------------------------------------
+  $$ X coordinate tolerance
+  $$ -----------------------------------------------------------
+
+  IF/((point_axis_mask .EQ. 1) .OR. $
+      (point_axis_mask .EQ. 3) .OR. $
+      (point_axis_mask .EQ. 5) .OR. $
+      (point_axis_mask .EQ. 7))
+
+    value_1 = ASSIGN/plan_i * normal_lower
+    value_2 = ASSIGN/plan_i * normal_upper
+
+    axis_lower = ASSIGN/MN(value_1,value_2)
+    axis_upper = ASSIGN/MX(value_1,value_2)
+
+    T(@point_tol_x_name)=TOL/CORTOL,XAXIS,$
+      axis_lower,axis_upper
+
+  ENDIF
+
+  $$ -----------------------------------------------------------
+  $$ Y coordinate tolerance
+  $$ -----------------------------------------------------------
+
+  IF/((point_axis_mask .EQ. 2) .OR. $
+      (point_axis_mask .EQ. 3) .OR. $
+      (point_axis_mask .EQ. 6) .OR. $
+      (point_axis_mask .EQ. 7))
+
+    value_1 = ASSIGN/plan_j * normal_lower
+    value_2 = ASSIGN/plan_j * normal_upper
+
+    axis_lower = ASSIGN/MN(value_1,value_2)
+    axis_upper = ASSIGN/MX(value_1,value_2)
+
+    T(@point_tol_y_name)=TOL/CORTOL,YAXIS,$
+      axis_lower,axis_upper
+
+  ENDIF
+
+  $$ -----------------------------------------------------------
+  $$ Z coordinate tolerance
+  $$ -----------------------------------------------------------
+
+  IF/((point_axis_mask .EQ. 4) .OR. $
+      (point_axis_mask .EQ. 5) .OR. $
+      (point_axis_mask .EQ. 6) .OR. $
+      (point_axis_mask .EQ. 7))
+
+    value_1 = ASSIGN/plan_k * normal_lower
+    value_2 = ASSIGN/plan_k * normal_upper
+
+    axis_lower = ASSIGN/MN(value_1,value_2)
+    axis_upper = ASSIGN/MX(value_1,value_2)
+
+    T(@point_tol_z_name)=TOL/CORTOL,ZAXIS,$
+      axis_lower,axis_upper
+
+  ENDIF
+
+ENDMAC
+
+$$ ----------------------------------------------------------------------------
+$$ POINT VECTOR-BASED COORDINATE TOLERANCES
+$$ ----------------------------------------------------------------------------
+$$
+$$ Creates coordinate tolerances derived from all relevant
+$$ components of the nominal point vector.
+$$
+$$ There is no dominant-axis selection and no angular limit.
+$$ Every vector component greater than epsilon is used.
+$$
+$$ Coordinate tolerances:
+$$
+$$   value_1 = vector_component * normal_lower
+$$   value_2 = vector_component * normal_upper
+$$
+$$   lower = MIN(value_1,value_2)
+$$   upper = MAX(value_1,value_2)
+$$
+$$ Negative vector components are therefore handled correctly.
+$$
+$$ Results:
+$$   point_axis_mask
+$$   point_tol_x_name
+$$   point_tol_y_name
+$$   point_tol_z_name
+$$
+$$ No OUTPUT statement is generated.
+$$ ----------------------------------------------------------------------------
+
+M(POINT_TOL_VECTOR_CORTOL)=MACRO/point_name,$
+                                 normal_lower,$
+                                 normal_upper
+
+  DECL/LOCAL,REAL,plan_i,plan_j,plan_k
+  DECL/LOCAL,REAL,abs_i,abs_j,abs_k
+  DECL/LOCAL,REAL,value_1,value_2
+  DECL/LOCAL,REAL,axis_lower,axis_upper
+  DECL/LOCAL,REAL,epsilon
+
+  DECL/LOCAL,VECTOR,plan_vec
+
+  $$ -----------------------------------------------------------
+  $$ Minimum relevant vector component
+  $$ -----------------------------------------------------------
+
+  epsilon = ASSIGN/0.000001
+
+  $$ -----------------------------------------------------------
+  $$ Read and normalize the nominal point vector
+  $$ -----------------------------------------------------------
+
+  plan_i = OBTAIN/F(@point_name),6
+  plan_j = OBTAIN/F(@point_name),7
+  plan_k = OBTAIN/F(@point_name),8
+
+  plan_vec = ASSIGN/VUNIT($
+    VCART(plan_i,plan_j,plan_k))
+
+  plan_i = ASSIGN/VECX(plan_vec)
+  plan_j = ASSIGN/VECY(plan_vec)
+  plan_k = ASSIGN/VECZ(plan_vec)
+
+  abs_i = ASSIGN/ABS(plan_i)
+  abs_j = ASSIGN/ABS(plan_j)
+  abs_k = ASSIGN/ABS(plan_k)
+
+  $$ -----------------------------------------------------------
+  $$ Reset output-axis mask
+  $$ -----------------------------------------------------------
+
+  point_axis_mask = ASSIGN/0
+
+  $$ -----------------------------------------------------------
+  $$ Generate tolerance names
+  $$ -----------------------------------------------------------
+
+  point_tol_x_name = ASSIGN/CONCAT(point_name,'X')
+  point_tol_y_name = ASSIGN/CONCAT(point_name,'Y')
+  point_tol_z_name = ASSIGN/CONCAT(point_name,'Z')
+
+  $$ -----------------------------------------------------------
+  $$ X coordinate tolerance
+  $$ -----------------------------------------------------------
+
+  IF/(abs_i .GT. epsilon)
+
+    value_1 = ASSIGN/plan_i * normal_lower
+    value_2 = ASSIGN/plan_i * normal_upper
+
+    axis_lower = ASSIGN/MN(value_1,value_2)
+    axis_upper = ASSIGN/MX(value_1,value_2)
+
+    T(@point_tol_x_name)=TOL/CORTOL,XAXIS,$
+      axis_lower,axis_upper
+
+    point_axis_mask = ASSIGN/point_axis_mask + 1
+
+  ENDIF
+
+  $$ -----------------------------------------------------------
+  $$ Y coordinate tolerance
+  $$ -----------------------------------------------------------
+
+  IF/(abs_j .GT. epsilon)
+
+    value_1 = ASSIGN/plan_j * normal_lower
+    value_2 = ASSIGN/plan_j * normal_upper
+
+    axis_lower = ASSIGN/MN(value_1,value_2)
+    axis_upper = ASSIGN/MX(value_1,value_2)
+
+    T(@point_tol_y_name)=TOL/CORTOL,YAXIS,$
+      axis_lower,axis_upper
+
+    point_axis_mask = ASSIGN/point_axis_mask + 2
+
+  ENDIF
+
+  $$ -----------------------------------------------------------
+  $$ Z coordinate tolerance
+  $$ -----------------------------------------------------------
+
+  IF/(abs_k .GT. epsilon)
+
+    value_1 = ASSIGN/plan_k * normal_lower
+    value_2 = ASSIGN/plan_k * normal_upper
+
+    axis_lower = ASSIGN/MN(value_1,value_2)
+    axis_upper = ASSIGN/MX(value_1,value_2)
+
+    T(@point_tol_z_name)=TOL/CORTOL,ZAXIS,$
+      axis_lower,axis_upper
+
+    point_axis_mask = ASSIGN/point_axis_mask + 4
+
+  ENDIF
+
+ENDMAC
+
+$$ ----------------------------------------------------------------------------
+$$ POINT NORMAL TOLERANCE
+$$ ----------------------------------------------------------------------------
+$$
+$$ Creates a normal/profile tolerance for a point feature.
+$$ No OUTPUT statement is generated.
+$$
+$$ output_convention:
+$$
+$$   0 = Generic
+$$       tolerance name: <point_name>N
+$$       tolerance type: PROFS
+$$
+$$   1 = Volkswagen / Audi
+$$       tolerance name: <point_name>P
+$$       tolerance type: PROFP
+$$
+$$   2 = Mercedes-Benz
+$$       tolerance name: <point_name>N
+$$       tolerance type: PROFS
+$$
+$$   3 = BMW
+$$       tolerance name: N<point_name>
+$$       tolerance type: PROFS
+$$
+$$ Example VW:
+$$
+$$   feature:
+$$     MLRVL1221_RVAA
+$$
+$$   tolerance:
+$$     MLRVL1221_RVAAP
+$$
+$$ Example Mercedes-Benz:
+$$
+$$   feature:
+$$     A2076370509_9027L
+$$
+$$   tolerance:
+$$     A2076370509_9027LN
+$$
+$$ Example BMW:
+$$
+$$   feature:
+$$     L010401b
+$$
+$$   normal tolerance:
+$$     NL010401b
+$$
+$$ ----------------------------------------------------------------------------
+
+M(POINT_TOL_NORMAL)=MACRO/point_name,$
+                          output_convention,$
+                          normal_lower,$
+                          normal_upper
+
+  $$ -----------------------------------------------------------
+  $$ Generic convention
+  $$ -----------------------------------------------------------
+
+  IF/(output_convention .EQ. 0)
+
+    point_tol_normal_name = ASSIGN/$
+      CONCAT(point_name,'N')
+
+    T(@point_tol_normal_name)=TOL/PROFS,$
+      normal_lower,normal_upper
+
+  ELSE
+
+    $$ ---------------------------------------------------------
+    $$ Volkswagen / Audi
+    $$ ---------------------------------------------------------
+
+    IF/(output_convention .EQ. 1)
+
+      point_tol_normal_name = ASSIGN/$
+        CONCAT(point_name,'P')
+
+      T(@point_tol_normal_name)=TOL/PROFP,$
+        normal_lower,normal_upper
+
+    ELSE
+
+      $$ -------------------------------------------------------
+      $$ Mercedes-Benz
+      $$ -------------------------------------------------------
+
+      IF/(output_convention .EQ. 2)
+
+        point_tol_normal_name = ASSIGN/$
+          CONCAT(point_name,'N')
+
+        T(@point_tol_normal_name)=TOL/PROFS,$
+          normal_lower,normal_upper
+
+      ELSE
+
+        $$ -----------------------------------------------------
+        $$ BMW
+        $$ -----------------------------------------------------
+
+        IF/(output_convention .EQ. 3)
+
+          $$ BMW
+          $$ Normal tolerance uses prefix N.
+          $$ Position tolerance uses prefix P.
+
+          point_tol_normal_name = ASSIGN/$
+            CONCAT('N',point_name)
+
+          T(@point_tol_normal_name)=TOL/PROFS,$
+            normal_lower,normal_upper
+
+        ELSE
+
+          $$ ---------------------------------------------------
+          $$ Fallback to generic convention
+          $$ ---------------------------------------------------
+
+          point_tol_normal_name = ASSIGN/$
+            CONCAT(point_name,'N')
+
+          T(@point_tol_normal_name)=TOL/PROFS,$
+            normal_lower,normal_upper
+
+        ENDIF
+
+      ENDIF
+
+    ENDIF
+
+  ENDIF
+
+  $$ Inform the output system that a normal tolerance exists.
+  point_normal_active = ASSIGN/1
+
+ENDMAC
+
+$$ ----------------------------------------------------------------------------
+$$ POINT 3D POSITION TOLERANCE
+$$ ----------------------------------------------------------------------------
+$$
+$$ Creates a 3D position tolerance for a point feature.
+$$ No OUTPUT statement is generated.
+$$
+$$ output_convention:
+$$
+$$   0 = Generic
+$$       tolerance name: <point_name>POS
+$$
+$$   1 = Volkswagen / Audi
+$$       tolerance name: <point_name>P2
+$$
+$$   2 = Mercedes-Benz
+$$       tolerance name: <point_name>N2
+$$
+$$   3 = BMW
+$$       tolerance name: P<point_name>
+$$
+$$ tolerance:
+$$   TOL/POS,3D,<position_tolerance>
+$$ ----------------------------------------------------------------------------
+
+M(POINT_TOL_POSITION)=MACRO/point_name,$
+                            output_convention,$
+                            position_tolerance
+
+  $$ -----------------------------------------------------------
+  $$ Generate customer-specific tolerance name
+  $$ -----------------------------------------------------------
+
+  IF/(output_convention .EQ. 1)
+
+    $$ Volkswagen / Audi
+
+    point_tol_position_name = ASSIGN/$
+      CONCAT(point_name,'P2')
+
+  ELSE
+
+    IF/(output_convention .EQ. 2)
+
+      $$ Mercedes-Benz
+
+      point_tol_position_name = ASSIGN/$
+        CONCAT(point_name,'N2')
+
+    ELSE
+
+      IF/(output_convention .EQ. 3)
+
+        $$ BMW
+
+        point_tol_position_name = ASSIGN/$
+          CONCAT('P',point_name)
+
+      ELSE
+
+        $$ Generic
+
+        point_tol_position_name = ASSIGN/$
+          CONCAT(point_name,'POS')
+
+      ENDIF
+
+    ENDIF
+
+  ENDIF
+
+  $$ -----------------------------------------------------------
+  $$ Create 3D position tolerance
+  $$ -----------------------------------------------------------
+
+  T(@point_tol_position_name)=TOL/POS,3D,$
+    position_tolerance
+
+  $$ Inform the output system that a position tolerance exists.
+  point_position_active = ASSIGN/1
+
+ENDMAC
+
+$$ ======================= GENERIC OUTPUT FUNCTIONS ===========================
+
+$$ ----------------------------------------------------------------------------
+$$ POINT OUTPUT STATE RESET
+$$ ----------------------------------------------------------------------------
+$$
+$$ Clears all prepared point-tolerance state and names.
+$$ Call before preparing tolerances for a new point feature.
+$$ ----------------------------------------------------------------------------
+
+M(POINT_OUTPUT_RESET)=MACRO/
+
+  point_main_axis = ASSIGN/0
+  point_axis_mask = ASSIGN/0
+
+  point_normal_active = ASSIGN/0
+  point_position_active = ASSIGN/0
+
+  point_tol_x_name = ASSIGN/''
+  point_tol_y_name = ASSIGN/''
+  point_tol_z_name = ASSIGN/''
+  point_tol_normal_name = ASSIGN/''
+  point_tol_position_name = ASSIGN/''
+
+ENDMAC
+
+$$ ----------------------------------------------------------------------------
+$$ POINT OUTPUT
+$$ ----------------------------------------------------------------------------
+$$ Writes all previously defined tolerance results.
+$$
+$$ feature_output:
+$$   0 = nominal feature only
+$$   1 = actual feature only
+$$   2 = nominal and actual feature
+$$
+$$ output_style:
+$$   0 = separate OUTPUT statements
+$$   1 = combined OUTPUT statement
+$$ ----------------------------------------------------------------------------
+
+M(POINT_OUTPUT_WRITE)=MACRO/point_name,$
+                            feature_output,$
+                            output_style
+
+  $$ -----------------------------------------------------------
+  $$ Separate output
+  $$ -----------------------------------------------------------
+
+  IF/(output_style .EQ. 0)
+
+    $$ Complete separate-output code
+
+    $$ ---------------------------------------------------------
+    $$ X coordinate tolerance
+    $$ ---------------------------------------------------------
+
+    IF/((point_axis_mask .EQ. 1) .OR. $
+        (point_axis_mask .EQ. 3) .OR. $
+        (point_axis_mask .EQ. 5) .OR. $
+        (point_axis_mask .EQ. 7))
+
+      IF/((feature_output .EQ. 0) .OR. $
+          (feature_output .EQ. 2))
+
+        OUTPUT/F(@point_name),$
+          T(@point_tol_x_name)
+
+      ENDIF
+
+      IF/((feature_output .EQ. 1) .OR. $
+          (feature_output .EQ. 2))
+
+        OUTPUT/FA(@point_name),$
+          TA(@point_tol_x_name)
+
+      ENDIF
+
+    ENDIF
+
+    $$ ---------------------------------------------------------
+    $$ Y coordinate tolerance
+    $$ ---------------------------------------------------------
+
+    IF/((point_axis_mask .EQ. 2) .OR. $
+        (point_axis_mask .EQ. 3) .OR. $
+        (point_axis_mask .EQ. 6) .OR. $
+        (point_axis_mask .EQ. 7))
+
+      IF/((feature_output .EQ. 0) .OR. $
+          (feature_output .EQ. 2))
+
+        OUTPUT/F(@point_name),$
+          T(@point_tol_y_name)
+
+      ENDIF
+
+      IF/((feature_output .EQ. 1) .OR. $
+          (feature_output .EQ. 2))
+
+        OUTPUT/FA(@point_name),$
+          TA(@point_tol_y_name)
+
+      ENDIF
+
+    ENDIF
+
+    $$ ---------------------------------------------------------
+    $$ Z coordinate tolerance
+    $$ ---------------------------------------------------------
+
+    IF/((point_axis_mask .EQ. 4) .OR. $
+        (point_axis_mask .EQ. 5) .OR. $
+        (point_axis_mask .EQ. 6) .OR. $
+        (point_axis_mask .EQ. 7))
+
+      IF/((feature_output .EQ. 0) .OR. $
+          (feature_output .EQ. 2))
+
+        OUTPUT/F(@point_name),$
+          T(@point_tol_z_name)
+
+      ENDIF
+
+      IF/((feature_output .EQ. 1) .OR. $
+          (feature_output .EQ. 2))
+
+        OUTPUT/FA(@point_name),$
+          TA(@point_tol_z_name)
+
+      ENDIF
+
+    ENDIF
+
+    $$ ---------------------------------------------------------
+    $$ Normal tolerance
+    $$ ---------------------------------------------------------
+
+    IF/(point_normal_active .EQ. 1)
+
+      IF/((feature_output .EQ. 0) .OR. $
+          (feature_output .EQ. 2))
+
+        OUTPUT/F(@point_name),$
+          T(@point_tol_normal_name)
+
+      ENDIF
+
+      IF/((feature_output .EQ. 1) .OR. $
+          (feature_output .EQ. 2))
+
+        OUTPUT/FA(@point_name),$
+          TA(@point_tol_normal_name)
+
+      ENDIF
+
+    ENDIF
+
+    $$ ---------------------------------------------------------
+    $$ 3D position tolerance
+    $$ ---------------------------------------------------------
+
+    IF/(point_position_active .EQ. 1)
+
+      IF/((feature_output .EQ. 0) .OR. $
+          (feature_output .EQ. 2))
+
+        OUTPUT/F(@point_name),$
+          T(@point_tol_position_name)
+
+      ENDIF
+
+      IF/((feature_output .EQ. 1) .OR. $
+          (feature_output .EQ. 2))
+
+        OUTPUT/FA(@point_name),$
+          TA(@point_tol_position_name)
+
+      ENDIF
+
+    ENDIF
+
+  ELSE
+
+    $$ ---------------------------------------------------------
+    $$ Combined output
+    $$ ---------------------------------------------------------
+
+    IF/(output_style .EQ. 1)
+
+      $$ -------------------------------------------------------
+      $$ Nominal feature
+      $$ -------------------------------------------------------
+
+      IF/((feature_output .EQ. 0) .OR. $
+          (feature_output .EQ. 2))
+
+        CALL/M(POINT_OUTPUT_COMBINED_F),$
+          point_name
+
+      ENDIF
+
+      $$ -------------------------------------------------------
+      $$ Actual feature
+      $$ -------------------------------------------------------
+
+      IF/((feature_output .EQ. 1) .OR. $
+          (feature_output .EQ. 2))
+
+        CALL/M(POINT_OUTPUT_COMBINED_FA),$
+          point_name
+
+      ENDIF
+
+    ENDIF
+
+  ENDIF
+
+ENDMAC
+
+$$ ----------------------------------------------------------------------------
+$$ COMBINED NOMINAL POINT OUTPUT
+$$ ----------------------------------------------------------------------------
+$$
+$$ Internal helper macro.
+$$ Writes one combined OUTPUT/F statement.
+$$
+$$ Supported:
+$$   - coordinate axis masks 0 to 7
+$$   - optional normal tolerance
+$$   - optional 3D position tolerance
+$$
+$$ ----------------------------------------------------------------------------
+
+M(POINT_OUTPUT_COMBINED_F)=MACRO/point_name
+
+  DECL/LOCAL,INTGR,criteria_mode
+
+  criteria_mode = ASSIGN/$
+    point_normal_active + 2 * point_position_active
+
+  SELECT/point_axis_mask
+
+  $$ =========================================================
+  $$ MASK 1: X
+  $$ =========================================================
+
+  CASE/1
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_normal_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  $$ =========================================================
+  $$ MASK 2: Y
+  $$ =========================================================
+
+  CASE/2
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/F(@point_name),$
+        T(@point_tol_y_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/F(@point_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/F(@point_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/F(@point_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_normal_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  $$ =========================================================
+  $$ MASK 3: X + Y
+  $$ =========================================================
+
+  CASE/3
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_y_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_normal_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  $$ =========================================================
+  $$ MASK 4: Z
+  $$ =========================================================
+
+  CASE/4
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/F(@point_name),$
+        T(@point_tol_z_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/F(@point_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/F(@point_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/F(@point_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_normal_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  $$ =========================================================
+  $$ MASK 5: X + Z
+  $$ =========================================================
+
+  CASE/5
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_z_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_normal_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  $$ =========================================================
+  $$ MASK 6: Y + Z
+  $$ =========================================================
+
+  CASE/6
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/F(@point_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_z_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/F(@point_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/F(@point_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/F(@point_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_normal_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  $$ =========================================================
+  $$ MASK 7: X + Y + Z
+  $$ =========================================================
+
+  CASE/7
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_z_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/F(@point_name),$
+        T(@point_tol_x_name),$
+        T(@point_tol_y_name),$
+        T(@point_tol_z_name),$
+        T(@point_tol_normal_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  $$ =========================================================
+  $$ MASK 0 OR INVALID MASK: No coordinate tolerance
+  $$ =========================================================
+
+  DFTCAS
+
+    SELECT/criteria_mode
+
+    CASE/1
+      OUTPUT/F(@point_name),$
+        T(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/F(@point_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/F(@point_name),$
+        T(@point_tol_normal_name),$
+        T(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  ENDSEL
+
+ENDMAC
+
+$$ ----------------------------------------------------------------------------
+$$ COMBINED ACTUAL POINT OUTPUT
+$$ ----------------------------------------------------------------------------
+$$
+$$ Internal helper macro.
+$$ Writes one combined OUTPUT/FA statement.
+$$ ----------------------------------------------------------------------------
+
+M(POINT_OUTPUT_COMBINED_FA)=MACRO/point_name
+
+  DECL/LOCAL,INTGR,criteria_mode
+
+  criteria_mode = ASSIGN/$
+    point_normal_active + 2 * point_position_active
+
+  SELECT/point_axis_mask
+
+  CASE/1
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_normal_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  CASE/2
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_y_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_normal_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  CASE/3
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_y_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_normal_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  CASE/4
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_z_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_normal_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  CASE/5
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_z_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_normal_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  CASE/6
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_z_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_normal_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  CASE/7
+
+    SELECT/criteria_mode
+
+    CASE/0
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_z_name)
+    ENDCAS
+
+    CASE/1
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_x_name),$
+        TA(@point_tol_y_name),$
+        TA(@point_tol_z_name),$
+        TA(@point_tol_normal_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  DFTCAS
+
+    SELECT/criteria_mode
+
+    CASE/1
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_normal_name)
+    ENDCAS
+
+    CASE/2
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    CASE/3
+      OUTPUT/FA(@point_name),$
+        TA(@point_tol_normal_name),$
+        TA(@point_tol_position_name)
+    ENDCAS
+
+    ENDSEL
+
+  ENDCAS
+
+  ENDSEL
+
+ENDMAC
+
+$$ ====================== CUSTOMER STRATEGY WRAPPERS ==========================
+
+$$ ----------------------------------------------------------------------------
+$$ VOLKSWAGEN / AUDI STRATEGY WRAPPERS
+$$ ----------------------------------------------------------------------------
+
+
+$$ ----------------------------------------------------------------------------
+$$ MERCEDES-BENZ STRATEGY WRAPPERS
+$$ ----------------------------------------------------------------------------
+
+
+$$ ----------------------------------------------------------------------------
+$$ BMW STRATEGY WRAPPERS
+$$ ----------------------------------------------------------------------------
+
+$$ ======================= EXPERIMENTAL STRATEGIES ============================
+
+$$ base measure of a hexagon: via circle
+M(HEX_BASE)=MACRO/ftname, dia, dept
+ DECL/LOCAL,INTGR, loop, ptcnt
+ DECL/LOCAL,REAL,vector_i, vector_j
+ ptcnt = ASSIGN/6
+ $$ My standard hold-off distance is 6.
+ $$ this APPRCH/RETRCT is for probe dir of 2mm
+ IF/(dia .LE. 6)
+   SNSET/APPRCH,(dia/2.0)-1
+   SNSET/RETRCT,(dia/2.0)-1
+ ENDIF
+ F(@ftname)=FEAT/CIRCLE,INNER,CART,0,0,dept,0,0,1,dia
+ MEAS/CIRCLE,F(@ftname),ptcnt
+  DO/loop,1,ptcnt
+   vector_i = ASSIGN/COS(2 * PI * (loop -1)/ptcnt)
+   vector_j = ASSIGN/SIN(2 * PI * (loop -1)/ptcnt)
+   PTMEAS/CART,vector_i * dia / 2, vector_j * dia / 2, dept, -vector_i, -vector_j, 0.0
+  ENDDO
+ ENDMES
+ENDMAC
+
+$$ If the hexagon is larger, we can safely determine its lines
+M(HEX_WITH_LINES)=MACRO/ftname, dia, dept
+ DECL/LOCAL,INTGR,loop, counter, rest2, rest6
+ DECL/LOCAL,REAL,outrad, crvendist, stdprt, rad1, rad2, xcoord1, ycoord1, xcoord2, ycoord2
+ DECL/LOCAL,REAL,vector_i, vector_j, dia_act
+ DECL/LOCAL,CHAR,15, lin_name, lin_first, lin_last, int_name, out_cir, dummy_pln, wcs_name
+ DECL/LOCAL,CHAR,15, pt_names[6]
+ $$ Distance of the measuring points to the line end
+ $$ could be passed as an argument
+ crvendist=ASSIGN/2.0
+ outrad = ASSIGN/dia/SQRT(3)
+ stdprt = ASSIGN/crvendist * SQRT(3)/ dia
+ DO/loop,0,11
+  counter = ASSIGN/INT(loop/2.0)
+  rest2 = ASSIGN/loop - 2 * counter
+  rad1 = ASSIGN/(30 + 60 * counter) * PI / 180
+  rest6 = ASSIGN/((counter + 1) - 6 * INT((counter + 1)/6.0))
+  rad2 = ASSIGN/(30 + 60 * rest6) * PI / 180
+  IF/(rest2 .EQ. 0)
+    xcoord2 = ASSIGN/stdprt * outrad * COS(rad1) + (1 - stdprt) * outrad * COS(rad2)
+	ycoord2 = ASSIGN/stdprt * outrad * SIN(rad1) + (1 - stdprt) * outrad * SIN(rad2)
+  ELSE
+    xcoord1 = ASSIGN/(1 - stdprt) * outrad * COS(rad1) + stdprt * outrad * COS(rad2)
+	ycoord1 = ASSIGN/(1 - stdprt) * outrad * SIN(rad1) + stdprt * outrad * SIN(rad2)
+    vector_i = ASSIGN/COS(2 * PI * (counter + 1)/6)
+    vector_j = ASSIGN/SIN(2 * PI * (counter + 1)/6)
+
+	lin_name = ASSIGN/CONCAT(ftname,'_LIN', STR(counter + 1))
+	F(@lin_name)=FEAT/LINE,BND,CART,xcoord1,ycoord1,dept,xcoord2,ycoord2,dept,0,0,1
+     MEAS/LINE,F(@lin_name),2
+     PTMEAS/CART,xcoord1, ycoord1, dept, -vector_i, -vector_j, 0
+     PTMEAS/CART,xcoord2, ycoord2, dept, -vector_i, -vector_j, 0
+	ENDMES
+
+	$$ connect the line
+	IF/(counter .GT. 0)
+	  int_name = ASSIGN/CONCAT(ftname,'_PT', STR(counter))
+	  $$ X=Umkreisradius*COS(BOGENMASS(30+60*B24))
+	  $$ Y=Umkreisradius*SIN(BOGENMASS(30+60*B24))
+	  xcoord1 = ASSIGN/outrad * COS((30 + 60 * (counter)) * PI / 180)
+	  ycoord1 = ASSIGN/outrad * SIN((30 + 60 * (counter)) * PI / 180)
+
+	  F(@int_name)=FEAT/POINT,CART,xcoord1,ycoord1,dept,0,0,1
+      CONST/POINT,F(@int_name),INTOF,FA(@lin_last),FA(@lin_name)
+      pt_names[counter] = ASSIGN/int_name
+
+      $$ construct the last intof point
+	  IF/(counter .EQ. 5)
+	    xcoord1 = ASSIGN/outrad * COS((30 + 60 * (counter + 1)) * PI / 180)
+	    ycoord1 = ASSIGN/outrad * SIN((30 + 60 * (counter + 1)) * PI / 180)
+		int_name = ASSIGN/CONCAT(ftname,'_PT', STR(counter + 1))
+		 F(@int_name)=FEAT/POINT,CART,xcoord1,ycoord1,dept,0,0,1
+         CONST/POINT,F(@int_name),INTOF,FA(@lin_name),FA(@lin_first)
+		 pt_names[counter+1] = ASSIGN/int_name
+	  ENDIF
+	ELSE
+	  lin_first = ASSIGN/lin_name
+	ENDIF
+	lin_last = ASSIGN/lin_name
+  ENDIF
+ ENDDO
+
+ $$ Outer circle from all corner points
+ out_cir = ASSIGN/CONCAT(ftname,'_OUTCIR')
+ F(@out_cir)=FEAT/CIRCLE,INNER,CART,0,0,dept,0,0,1,outrad * 2
+ CONST/CIRCLE, F(@out_cir),BF,FA(@pt_names[1]),FA(@pt_names[2]),$
+  FA(@pt_names[3]),FA(@pt_names[4]),FA(@pt_names[5]),FA(@pt_names[6])
+ $$ get the actual outer diameter
+ dia_act = OBTAIN/FA(@out_cir),10
+
+ wcs_cnt = ASSIGN/wcs_cnt+1
+ wcs_name = ASSIGN/CONCAT('WCS',STR(wcs_cnt))
+ D(@wcs_name)=TRANS/XORIG,F(@out_cir),YORIG,F(@out_cir)
+
+ $$ Auxiliary element: BestFit plane from all corner points
+ dummy_pln = ASSIGN/CONCAT(ftname,'_DUMPLN')
+ F(@dummy_pln)=FEAT/PLANE,CART,0,0,dept,0,0,1
+ CONST/PLANE,F(@dummy_pln),BF,FA(@pt_names[1]),FA(@pt_names[2]),$
+  FA(@pt_names[3]),FA(@pt_names[4]),FA(@pt_names[5]),FA(@pt_names[6])
+
+ $$ Creating the inner circle with a mathematically reduced outer diameter
+ F(@ftname)=FEAT/CIRCLE,INNER,CART,0,0,dept,0,0,1,dia_act / 2 * SQRT(3)
+ CONST/CIRCLE,F(@ftname),PROJCT,FA(@dummy_pln),F(@ftname)
+ENDMAC
+
+M(HEX_MEASURE)=MACRO/hex_name, xyz_pos, ijk_dir, uvw_dir, dia, dept
+  DECL/LOCAL,CHAR,15, lin_name, pln_name, cir_name, cir2_name, wcs_name
+  DECL/LOCAL,REAL, rho
+  DECL/GLOBAL,REAL, PI
+  DECL/GLOBAL,INTGR, wcs_cnt
+  $$ ASSIGNMENTS
+  wcs_cnt = ASSIGN/0
+  PI = ASSIGN/ 3.14159265
+  $$
+  $$ Please adjust the number of measure points for the circle
+  $$ Measurement runs counterclockwise, starting point has the vector -1,0,0
+  $$ With an angle moffset of 90°, for example, the first point starts at 0,-1,0
+  $$ Define the hexagon as a circle in order to use the diameter for the output of the spanner size
+  F(@hex_name)=FEAT/CIRCLE,INNER,CART,VECX(xyz_pos),VECY(xyz_pos),VECZ(xyz_pos),VECX(ijk_dir),VECY(ijk_dir),VECZ(ijk_dir),dia
+  $$ Set the nominal feature to NULL
+  wcs_cnt = ASSIGN/wcs_cnt+1
+  wcs_name = ASSIGN/CONCAT('WCS',STR(wcs_cnt))
+  D(@wcs_name)=TRANS/XORIG,F(@hex_name),YORIG,F(@hex_name),ZORIG,F(@hex_name)
+  $$ The next line we need later to rotate around the main axis still to be defined
+  $$ Attention: For Quartis we can keep the line nominal
+  lin_name = ASSIGN/CONCAT(hex_name,'_LIN')
+  F(@lin_name)=FEAT/LINE,UNBND,CART,0,0,0,VECX(uvw_dir),VECY(uvw_dir),VECZ(uvw_dir),0,0,1
+  wcs_cnt = ASSIGN/wcs_cnt+1
+  wcs_name = ASSIGN/CONCAT('WCS',STR(wcs_cnt))
+  D(@wcs_name)=ROTATE/XAXIS,F(@hex_name),ZDIR
+  wcs_cnt = ASSIGN/wcs_cnt+1
+  wcs_name = ASSIGN/CONCAT('WCS',STR(wcs_cnt))
+  D(@wcs_name)=ROTATE/YAXIS,F(@hex_name),ZDIR
+  $$ let's rotate now the secondary axis
+  wcs_cnt = ASSIGN/wcs_cnt+1
+  wcs_name = ASSIGN/CONCAT('WCS',STR(wcs_cnt))
+  D(@wcs_name)=ROTATE/ZAXIS,F(@lin_name),XDIR
+  GOTO/0,0,10
+  $$ if necessary, rotate the coordinate system
+  $$ calculate 4 points around the hexagon with at least 3mm edge distance
+  rho = ASSIGN/(dia/SQRT(3) + 3)
+  pln_name = ASSIGN/CONCAT(hex_name,'_PLN')
+  F(@pln_name)=FEAT/PLANE,CART,0,0,0,0,0,1
+  MEAS/PLANE,F(@pln_name),4
+   PTMEAS/CART,rho,0,0,0,0,1
+   PTMEAS/CART,0,rho,0,0,0,1
+   PTMEAS/CART,-rho,0,0,0,0,1
+   PTMEAS/CART,0,-rho,0,0,0,1
+  ENDMES
+  wcs_cnt = ASSIGN/wcs_cnt+1
+  wcs_name = ASSIGN/CONCAT('WCS',STR(wcs_cnt))
+  D(@wcs_name)=ROTATE/XAXIS,FA(@pln_name),ZDIR
+  wcs_cnt = ASSIGN/wcs_cnt+1
+  wcs_name = ASSIGN/CONCAT('WCS',STR(wcs_cnt))
+  D(@wcs_name)=ROTATE/YAXIS,FA(@pln_name),ZDIR
+  wcs_cnt = ASSIGN/wcs_cnt+1
+  wcs_name = ASSIGN/CONCAT('WCS',STR(wcs_cnt))
+  D(@wcs_name)=TRANS/XORIG,FA(@pln_name)
+  SAVE/DA(@wcs_name)
+  GOTO/0,0,6
+  GOTO/0,0,dept
+  $$ In any case, measure a circle (by calling the HEX_BASE macro)
+  cir_name = ASSIGN/CONCAT(hex_name,'_CIR')
+  CALL/M(HEX_BASE),cir_name,dia,dept
+  $$ Now decide what happens next based on the size
+  IF/(dia .GT. 6)
+    $$ Here, the measured circle is used as a preliminary alignment
+    wcs_cnt = ASSIGN/wcs_cnt+1
+    wcs_name = ASSIGN/CONCAT('WCS',STR(wcs_cnt))
+    D(@wcs_name)=TRANS/XORIG,F(@cir_name),YORIG,F(@cir_name),ZORIG,F(@cir_name)
+    $$ However, we want to determine the geometry of the hexagon based on its outer lines
+	cir2_name = ASSIGN/CONCAT(hex_name,'_CIR2')
+    CALL/M(HEX_WITH_LINES),cir2_name, dia, dept
+	GOTO/0,0,10
+	RECALL/D(WCS0)
+	CONST/CIRCLE,F(@hex_name),PROJCT,FA(@cir2_name),FA(@pln_name)
+  ELSE
+    GOTO/0,0,10
+    RECALL/D(WCS0)
+	$$ Here, the measured circle is used directly as the result
+    CONST/CIRCLE,F(@hex_name),PROJCT,FA(@cir_name),FA(@pln_name)
+  ENDIF
+ENDMAC
+
+ENDFIL

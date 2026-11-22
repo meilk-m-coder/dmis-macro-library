@@ -1,0 +1,150 @@
+DMISMN/'point-basic.dmi'
+
+$$ ============================================================================
+$$ EXAMPLE: Basic point measurement
+$$
+$$ This example demonstrates the basic DMIS Macro Library workflow:
+$$
+$$   nominal point
+$$       -> POINT_MEASURE
+$$       -> POINT_OUTPUT_RESET
+$$       -> POINT_TOL_CORTOL
+$$       -> POINT_OUTPUT_WRITE
+$$
+$$ Probe selection, safe machine travel, clearance positions and
+$$ machine-specific configuration must be validated for the target system.
+$$
+$$ WARNING:
+$$ Do not run this example on physical measurement equipment without
+$$ validating all positions, probe configurations and movements first.
+$$ ============================================================================
+
+DISPLY/TERM,DMIS,STOR,DMIS
+FILNAM/'point-basic.dmo',05.2
+
+UNITS/MM,ANGDEC
+MODE/PROG,MAN
+
+$$ ----------------------------------------------------------------------------
+$$ Base coordinate system
+$$ ----------------------------------------------------------------------------
+
+D(WCS0)=TRANS/XORIG,0.0000,YORIG,0.0000,ZORIG,0.0000
+SAVE/D(WCS0)
+
+$$ ----------------------------------------------------------------------------
+$$ Report header
+$$ ----------------------------------------------------------------------------
+
+R(R_DATE_HEADER)=REPORT/DATE
+OUTPUT/R(R_DATE_HEADER)
+
+R(R_TIME_HEADER)=REPORT/TIME
+OUTPUT/R(R_TIME_HEADER)
+
+$$ ----------------------------------------------------------------------------
+$$ Probe configuration
+$$
+$$ Replace the sensor selection with a sensor configuration that is valid
+$$ for the target measurement system.
+$$ ----------------------------------------------------------------------------
+
+SNSET/APPRCH,6
+SNSET/RETRCT,6
+SNSLCT/SA(2628)
+
+$$ ----------------------------------------------------------------------------
+$$ Example parameters
+$$ ----------------------------------------------------------------------------
+
+DECL/LOCAL,INTGR,vector_convention,inverse_direction
+DECL/LOCAL,INTGR,surface_point_count,snap_to_axis
+
+DECL/LOCAL,REAL,thickness,moffset
+DECL/LOCAL,REAL,surface_point_distance
+
+DECL/LOCAL,CHAR,64,elmname
+
+$$ ----------------------------------------------------------------------------
+$$ Measurement strategy
+$$
+$$ vector_convention = 0 -> nominal vector points away from the material
+$$ inverse_direction = 0 -> default measurement side
+$$ thickness         = 0 -> no material-thickness correction
+$$ moffset           = 0 -> no additional measurement offset
+$$ snap_to_axis      = 0 -> keep the measured point direction
+$$
+$$ surface_point_count = 1 -> direct single-point measurement
+$$ ----------------------------------------------------------------------------
+
+vector_convention = ASSIGN/0
+inverse_direction = ASSIGN/0
+
+thickness = ASSIGN/0.0
+moffset = ASSIGN/0.0
+
+snap_to_axis = ASSIGN/0
+
+surface_point_count = ASSIGN/1
+surface_point_distance = ASSIGN/0.0
+
+$$ ----------------------------------------------------------------------------
+$$ Define and measure a basic point
+$$ ----------------------------------------------------------------------------
+
+elmname = ASSIGN/'POINT_1'
+
+F(@elmname)=FEAT/POINT,CART,$
+  472.000,271.000,83.400,$
+  0.00000,0.00000,1.00000
+
+CALL/M(POINT_MEASURE),$
+  elmname,$
+  vector_convention,$
+  inverse_direction,$
+  thickness,$
+  moffset,$
+  snap_to_axis,$
+  surface_point_count,$
+  surface_point_distance,$
+  '',$
+  '',$
+  ''
+
+$$ ----------------------------------------------------------------------------
+$$ Reset tolerance/output state for this point
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_OUTPUT_RESET)
+
+$$ ----------------------------------------------------------------------------
+$$ Create explicit coordinate tolerances
+$$
+$$ Axis mask:
+$$   1 = X
+$$   2 = Y
+$$   3 = X + Y
+$$
+$$ This example creates X and Y coordinate tolerances.
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_TOL_CORTOL),$
+  elmname,$
+  3,$
+  -0.500,0.500,$
+  -0.600,0.600,$
+  -0.700,0.700
+
+$$ ----------------------------------------------------------------------------
+$$ Write measurement results
+$$
+$$ feature_output = 2 -> nominal and actual feature output (F and FA)
+$$ output_style   = 1 -> combined output
+$$ ----------------------------------------------------------------------------
+
+CALL/M(POINT_OUTPUT_WRITE),$
+  elmname,$
+  2,$
+  1
+
+ENDFIL

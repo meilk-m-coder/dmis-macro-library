@@ -1,0 +1,32 @@
+FILNAM/'point-basic.dmo',05.2
+$$ ************************************************************************
+$$ WM | Quartis(R) R2026-2 (4.34.0.43851-b7c8b7c04c99) : DMIS Results Export
+$$ Copyright (c) 2026, WENZEL Metromec AG, Switzerland
+$$ Part Program        : point-basic
+$$ Workpiece           : 1
+$$ Description           : REFERENZKOERPER FUER VERGLEICHSMESS
+$$ Drawing No.           : 11-38D610762
+$$ Comment           : 
+$$ Measurement         : 1
+$$ Description           : 
+$$ Executed by         : werner
+$$ ************************************************************************
+ 
+OUTPUT/R(R_DATE_HEADER)
+DATE = 2026/11/22
+ 
+OUTPUT/R(R_TIME_HEADER)
+TIME = 14:53:50
+ 
+OUTPUT/F(POINT_1),T(POINT_1X),T(POINT_1Y)
+F(POINT_1)=FEAT/POINT,CART,472.000000,271.000000,83.400000,0.000000, $
+    0.000000,1.000000
+T(POINT_1X)=TOL/CORTOL,XAXIS,-0.500000,0.500000
+T(POINT_1Y)=TOL/CORTOL,YAXIS,-0.600000,0.600000
+ 
+OUTPUT/FA(POINT_1),TA(POINT_1X),TA(POINT_1Y)
+FA(POINT_1)=FEAT/POINT,CART,472.000000,271.000000,83.400000,0.000000, $
+    0.000000,1.000000
+TA(POINT_1X)=TOL/CORTOL,XAXIS,0.000000,INTOL
+TA(POINT_1Y)=TOL/CORTOL,YAXIS,0.000000,INTOL
+ENDFIL
